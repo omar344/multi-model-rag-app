@@ -22,3 +22,20 @@ $ conda activate multi-model-rag-app
 ```bash
 export PS1="\[\033[01;32m\]\u@\h:\w\n\[\033[00m\]\$ "
 ```
+
+## Installation 
+
+### Install the required pakages
+
+```bash
+$ pip install -r requirement.txt
+```
+
+### Setup the environment variables
+
+```bash
+$ cp .env.example .env
+```
+
+set your environment variables in the `.env` file. like `OPEN_API_KEY` value.
+
