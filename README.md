@@ -34,7 +34,7 @@ export PS1="\[\033[01;32m\]\u@\h:\w\n\[\033[00m\]\$ "
 ### Setup the environment variables
 
 ```bash
- cp ./assets/.env.example ./assets/.env
+ cp .env.example .env
 ```
 
 set your environment variables in the `.env` file. like `OPEN_API_KEY` value.
