@@ -11,11 +11,11 @@ This is a implementation of the RAG multi model for question answering.
 1) Download and install Miniconda from [here](https://www.anaconda.com/docs/getting-started/miniconda/install#quickstart-install-instructions)
 2) create a new environment using the following command:
 ```bash
- conda create -n multi-model-rag-app python=3.8
+conda create -n multi-model-rag-app python=3.8
 ```
 3) Activate the environment:
 ```bash
- conda activate multi-model-rag-app
+conda activate multi-model-rag-app
 ```
 
 ### (Optional) Setup your command line interface for better readability
@@ -28,13 +28,13 @@ export PS1="\[\033[01;32m\]\u@\h:\w\n\[\033[00m\]\$ "
 ### Install the required pakages
 
 ```bash
- pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ### Setup the environment variables
 
 ```bash
- cp .env.example .env
+cp .env.example .env
 ```
 
 set your environment variables in the `.env` file. like `OPEN_API_KEY` value.
