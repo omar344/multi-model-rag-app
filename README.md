@@ -39,3 +39,10 @@ cp .env.example .env
 
 set your environment variables in the `.env` file. like `OPEN_API_KEY` value.
 
+## Run the FastAPI server
+```bash
+ uvicorn main:app --reload --host 0.0.0.0 --port 5000
+```
+## Postman Collection
+
+Download the POSTMAN collection from [/assets/multi-model-rag-app.postman_collection.json](/assets\multi-model-rag-app.postman_collection.json)
