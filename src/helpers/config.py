@@ -1,6 +1,6 @@
-from pydantic_setting import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-class config(BaseSettings):
+class Settings(BaseSettings):
 
     APP_NAME: str
     APP_VERSION: str
@@ -8,4 +8,9 @@ class config(BaseSettings):
 
     class Config:
         env_file = '.env'
-        
+
+def get_settings():
+    return Settings()
+
+
+
