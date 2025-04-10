@@ -30,7 +30,15 @@ export PS1="\[\033[01;32m\]\u@\h:\w\n\[\033[00m\]\$ "
 ```bash
 pip install -r requirements.txt
 ```
+To get the CPU version of torch
 
+```bash
+pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+```
+
+```bash
+apt-get install poppler-utils tesseract-ocr libmagic-dev
+```
 ### Setup the environment variables
 
 ```bash
