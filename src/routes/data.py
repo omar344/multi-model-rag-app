@@ -53,7 +53,7 @@ async def upload_data(project_id: str, file: UploadFile,
     return JSONResponse(
     content={
         "signal": ResponseSignal.FILE_UPLOAD_SUCCESS.value,
-        "file id": file_id
+        "file_id": file_id
         }
     )
 
