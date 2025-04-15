@@ -35,7 +35,7 @@ To get the CPU version of torch
 ```bash
 pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
 ```
-
+system level requirments for unstructured
 ```bash
 apt-get install poppler-utils tesseract-ocr libmagic-dev
 ```

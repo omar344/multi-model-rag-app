@@ -59,50 +59,42 @@ async def upload_data(project_id: str, file: UploadFile,
 
 @data_router.post("/process/{project_id}")
 async def process_endpoint(project_id: str, process_request: processRequest):
-    
     file_id = process_request.file_id
     chunk_size = process_request.chunk_size
     overlap_size = process_request.overlap_size
-    
+
     process_controller = ProcessController(project_id=project_id)
-    
+
     try:
         file_content = process_controller.get_file_content(file_id=file_id)
-        
+
         file_chunks = process_controller.process_file_content(
             file_content=file_content,
-            file_id=file_id,
-            chunk_size=chunk_size,
-            overlap_size=overlap_size
+            file_id=file_id
         )
-        
-        if file_chunks is None or len(file_chunks) == 0:
+
+        if not file_chunks:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                content={
-                    "signal": ResponseSignal.PROCESSING_FAILED.value
-                }
+                content={"signal": ResponseSignal.PROCESSING_FAILED.value}
             )
-        
-        # Serialize chunks into JSON-compatible format with type information
-        serialized_chunks = [
-            {
+
+        # Serialize into JSON format
+        serialized_chunks = []
+        for chunk in file_chunks:
+            serialized = {
                 "content": chunk.page_content,
-                "type": chunk.metadata.get("type", "text"),  # Include document type
                 "metadata": {
-                    k: v for k, v in chunk.metadata.items() 
-                    if k != "image_data"  # Exclude image_data from general metadata
+                    k: v for k, v in chunk.metadata.items() if k != "image_base64"
                 }
             }
-            for chunk in file_chunks
-        ]
-        
-        # Separately handle image data to make it accessible but not duplicate it
-        for i, chunk in enumerate(file_chunks):
-            if chunk.metadata.get("type") == "image" and "image_data" in chunk.metadata:
-                serialized_chunks[i]["image_data"] = chunk.metadata["image_data"]
-        
-        # Return serialized chunks as JSON response
+
+            # Only attach image base64 separately if it's an image
+            if chunk.metadata.get("type") == "image" and "image_base64" in chunk.metadata:
+                serialized["image_base64"] = chunk.metadata["image_base64"]
+
+            serialized_chunks.append(serialized)
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -110,6 +102,7 @@ async def process_endpoint(project_id: str, process_request: processRequest):
                 "chunks": serialized_chunks
             }
         )
+
     except Exception as e:
         logger.error(f"Error processing file: {e}")
         return JSONResponse(
