@@ -1,4 +1,4 @@
-from BaseDataModdel import BaseDataModel
+from models.BaseDataModel import BaseDataModel
 from helpers.config import get_settings
 from .enums.DatabaseEnum import DatabaseEnum
 
