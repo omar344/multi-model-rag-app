@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, validator, constr, conint, EmailStr, HttpUrl
 from typing import Optional as Optinal, List, Dict, Any
-from bsan.objectid import ObjectId
+from bson import ObjectId
 class Project(BaseModel):
     _id: Optinal[str]
     project_id: Optinal[str] = Field(..., min_length=1)
