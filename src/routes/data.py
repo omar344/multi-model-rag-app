@@ -21,11 +21,11 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
                       app_settings:Settings = Depends(get_settings)):
 
 
-    project_model = ProjectModel(
-        db_client = request.app.db_client
+    project_model = await ProjectModel.create_instance(
+        db_client=request.app.db_client
     )
 
-    project = project_model.get_project_or_great_one(
+    project =await  project_model.get_project_or_great_one(
         project_id = project_id
     )
 #validate the file properties
