@@ -7,7 +7,10 @@ class Settings(BaseSettings):
 
     FILE_ALLOWED_TYPES: str
     FILE_MAX_SIZE: int
-    FILE_DEFAULT_CHUNCK_SIZE: int
+    FILE_DEFAULT_CHUNK_SIZE: int 
+
+    MONGODB_URL: str
+    MONGODB_DATABASE: str
     
     GENERATION_BACKEND: str
     EMBEDDING_BACKEND: str
@@ -26,12 +29,9 @@ class Settings(BaseSettings):
     INPUT_DEFAULT_MAX_CHARACTERS: int = None
     GENERATION_DEFAULT_MAX_TOKENS: int = None
     GENERATION_DEFAULT_TEMPERATURE: float = None
-    
+
     class Config:
         env_file = '.env'
 
 def get_settings():
     return Settings()
-
-
-

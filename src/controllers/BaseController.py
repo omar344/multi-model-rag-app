@@ -17,3 +17,13 @@ class BaseController:
     def generate_random_string(self, length: int=12):
         return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
     
+    def get_database_path(self, db_name: str):
+        pass
+        database_path = os.path.join(
+            self.database_dir, db_name
+        )
+
+        if not os.path.exists(database_path):
+            os.makedirs(database_path)
+
+        return database_path
