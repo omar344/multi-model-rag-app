@@ -1,8 +1,10 @@
 from enum import Enum
 
-class LLMEnum(Enum):
+class LLMEnums(Enum):
     GROQ = "GROQ"
     HUGGINGFACE = "HUGGINGFACE"
+    OVHCLOUD = "OVHCLOUD"
+    OPENAI = "OPENAI"
     
     
 class GroqEnum(Enum):
@@ -10,3 +12,21 @@ class GroqEnum(Enum):
     USER = "user"
     ASSISTANT = "assistant"
     
+class OVHCloudEnum(Enum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    
+class OpenAIEnum(Enum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    
+class HuggingFaceEnum(Enum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+class DocumentTypeEnum(Enum):
+    DOCUMENT = "document"
+    QUERY = "query"   

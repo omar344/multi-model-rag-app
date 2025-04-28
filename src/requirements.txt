@@ -6,7 +6,6 @@ pydantic-settings==2.8.1
 aiofiles==24.1.0
 langchain==0.3.21
 langchain-community==0.3.20
-langchain-unstructured==0.1.6
 unstructured[pdf]==0.17.2
 pdf2image==1.17.0
 pytesseract==0.3.10
@@ -19,3 +18,4 @@ huggingface-hub==0.23.0
 accelerate==0.22.0
 groq==0.22.0
 sentence-transformers==4.1.0
+openai==1.75.0

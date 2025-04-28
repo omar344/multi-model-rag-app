@@ -10,9 +10,9 @@ class GroqProvider(LLMInterface):
                        default_generation_temperature: float=0.1):
         
         self.api_key = api_key
-        self.max_input_characters = max_input_characters
-        self.max_output_tokens = max_output_tokens
-        self.temperature = temperature
+        self.default_input_max_characters = default_input_max_characters
+        self.default_generation_max_output_tokens = default_generation_max_output_tokens
+        self.default_generation_temperature = default_generation_temperature
         
         self.generation_model_id = None
         

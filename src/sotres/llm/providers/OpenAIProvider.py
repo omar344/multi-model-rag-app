@@ -1,5 +1,5 @@
 from ..LLMInterface import LLMInterface
-from ..LLMEnums import OpenAIEnums
+from ..LLMEnums import OpenAIEnum
 from openai import OpenAI
 import logging
 
@@ -54,7 +54,7 @@ class OpenAIProvider(LLMInterface):
         temperature = temperature if temperature else self.default_generation_temperature
 
         chat_history.append(
-            self.construct_prompt(prompt=prompt, role=OpenAIEnums.USER.value)
+            self.construct_prompt(prompt=prompt, role=OpenAIEnum.USER.value)
         )
 
         response = self.client.chat.completions.create(
@@ -91,6 +91,9 @@ class OpenAIProvider(LLMInterface):
             return None
 
         return response.data[0].embedding
+    
+    def embed_image(self, image_base64: str):
+        pass
 
     def construct_prompt(self, prompt: str, role: str):
         return {

@@ -4,7 +4,6 @@ class Settings(BaseSettings):
 
     APP_NAME: str
     APP_VERSION: str
-    OPENAI_API_KEY: str
 
     FILE_ALLOWED_TYPES: str
     FILE_MAX_SIZE: int
@@ -17,14 +16,16 @@ class Settings(BaseSettings):
     OPENAI_API_URL: str = None
     GROQ_API_KEY: str = None
     HuggingFace_API_KEY: str = None
+    OVHCloud_API_KEY: str = None
+    GITHUB_TOKEN: str = None
 
     GENERATION_MODEL_ID: str = None
     EMBEDDING_MODEL_ID: str = None
     EMBEDDING_MODEL_SIZE: int = None
 
-    INPUT_DAFAULT_MAX_CHARACTERS: int = None
-    GENERATION_DAFAULT_MAX_TOKENS: int = None
-    GENERATION_DAFAULT_TEMPERATUR: float = None
+    INPUT_DEFAULT_MAX_CHARACTERS: int = None
+    GENERATION_DEFAULT_MAX_TOKENS: int = None
+    GENERATION_DEFAULT_TEMPERATURE: float = None
     
     class Config:
         env_file = '.env'

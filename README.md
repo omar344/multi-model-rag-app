@@ -11,7 +11,7 @@ This is a implementation of the RAG multi model for question answering.
 1) Download and install Miniconda from [here](https://www.anaconda.com/docs/getting-started/miniconda/install#quickstart-install-instructions)
 2) create a new environment using the following command:
 ```bash
-conda create -n multi-model-rag-app python=3.8
+conda create -n multi-model-rag-app python=3.10
 ```
 3) Activate the environment:
 ```bash
@@ -27,13 +27,17 @@ export PS1="\[\033[01;32m\]\u@\h:\w\n\[\033[00m\]\$ "
 
 ### Install the required pakages
 
-```bash
-pip install -r requirements.txt
-```
-To get the CPU version of torch
+
+To get the CPU version of torch, run this line first
 
 ```bash
-pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.2.0+cpu --index-url https://download.pytorch.org/whl/cpu
+pip install torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
+```
+then install the rest of the requirements
+
+```bash
+pip install -r requirements.txt
 ```
 system level requirments for unstructured
 ```bash
