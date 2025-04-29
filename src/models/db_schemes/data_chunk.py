@@ -13,10 +13,11 @@ class DataChunk(BaseModel):
     
     chunk_order: int = Field(..., gt=0)  
     chunk_project_id: ObjectId
-    file_type: ProcessingEnum
+    file_type: str = Field(..., min_length=1)
 
-    class Config:
-        arbitrary_types_allowed = True  # Allows usage of non-Pydantic types like ObjectId
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
     @classmethod
     def get_indexes(cls):
@@ -29,4 +30,3 @@ class DataChunk(BaseModel):
                 "unique": False
             }
         ]
-    

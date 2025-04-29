@@ -63,11 +63,10 @@ class ProcessController(BaseController):
             )
         elif isinstance(el, Image):
             return Document(
-                page_content="Image from document",
+                page_content=getattr(el.metadata, "image_base64", None),
                 metadata={
                     **meta,
-                    "type": "image",
-                    "image_base64": getattr(el.metadata, "image_base64", None)
+                    "type": "image"
                 },
             )
         return None

@@ -12,6 +12,7 @@ from models.ChunkModel import ChunkModel
 from models.AssetModel import AssetModel
 from models.db_schemes import DataChunk, Asset
 from models.enums.AssetTypeEnum import AssetTypeEnum
+from models.enums.ProcessingEnum import ProcessingEnum
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -84,7 +85,8 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
     return JSONResponse(
             content={
                 "signal": ResponseSignal.FILE_UPLOAD_SUCCESS.value,
-                "file_id": str(asset_record.id),
+                "asset_rcord_id": str(asset_record.id),
+                "file_id": asset_record.asset_name
             }
         )
 
@@ -171,9 +173,7 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
 
         file_chunks = process_controller.process_file_content(
             file_content=file_content,
-            file_id=file_id,
-            chunk_size=chunk_size,
-            overlap_size=overlap_size
+            file_id=file_id
         )
 
         if file_chunks is None or len(file_chunks) == 0:
@@ -184,13 +184,17 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
                 }
             )
 
+        file_type = process_controller.get_file_extension(file_id)
+        file_type_enum = ProcessingEnum(file_type)
+        
         file_chunks_records = [
             DataChunk(
                 chunk_text=chunk.page_content,
                 chunk_metadata=chunk.metadata,
                 chunk_order=i+1,
                 chunk_project_id=project.id,
-                chunk_asset_id=asset_id
+                chunk_asset_id=asset_id,
+                file_type=file_type_enum.value
             )
             for i, chunk in enumerate(file_chunks)
         ]

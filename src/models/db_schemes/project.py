@@ -13,8 +13,9 @@ class Project(BaseModel):
         
         return value
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
     @classmethod
     def get_indexes(cls):
