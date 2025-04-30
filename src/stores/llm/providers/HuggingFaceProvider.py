@@ -16,16 +16,18 @@ class HuggingFaceProvider(LLMInterface):
                  default_generation_max_output_tokens: int = 1000,
                  default_generation_temperature: float = 0.1):
         
-        self.model_id = model_id
+        self.api_key = api_key
+        self.api_url = api_url
+        
         self.default_input_max_characters = default_input_max_characters
         self.default_generation_max_output_tokens = default_generation_max_output_tokens
         self.default_generation_temperature = default_generation_temperature
 
         self.generation_model_id = None
-        self.embedding_model_id = model_id
+        self.embedding_model_id = None
         self.embedding_size = None
         
-        self.client = SentenceTransformer(model_id)
+        # self.client = SentenceTransformer(model_id)
         
         self.logger = logging.getLogger(__name__)
 
@@ -44,6 +46,8 @@ class HuggingFaceProvider(LLMInterface):
         raise NotImplementedError("HuggingFaceProvider does not support text generation.")
     
     def embed_text(self, text: str):
+        client = SentenceTransformer(self.embedding_model_id)
+        
         if not self.client:
             raise ValueError("HuggingFace client is not initialized.")
         
@@ -58,6 +62,8 @@ class HuggingFaceProvider(LLMInterface):
         return base64.b64decode(base64_string)
     
     def embed_image(self, image_base64: str):
+        client = SentenceTransformer(self.embedding_model_id)
+        
         if not self.client:
             raise ValueError("HuggingFace client is not initialized.")
         
