@@ -1,6 +1,7 @@
 from ..LLMInterface import LLMInterface
 from ..LLMEnums import LLMEnums
 
+import logging
 from groq import Groq
 
 class GroqProvider(LLMInterface):
