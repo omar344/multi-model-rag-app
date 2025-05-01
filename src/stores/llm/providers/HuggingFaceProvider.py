@@ -27,7 +27,7 @@ class HuggingFaceProvider(LLMInterface):
         self.embedding_model_id = None
         self.embedding_size = None
         
-        # self.client = SentenceTransformer(model_id)
+        self.client = None
         
         self.logger = logging.getLogger(__name__)
 
@@ -45,8 +45,8 @@ class HuggingFaceProvider(LLMInterface):
                       temperature: float = None):
         raise NotImplementedError("HuggingFaceProvider does not support text generation.")
     
-    def embed_text(self, text: str):
-        client = SentenceTransformer(self.embedding_model_id)
+    def embed_text(self, text: str, document_type: str = None):
+        self.client = SentenceTransformer(self.embedding_model_id)
         
         if not self.client:
             raise ValueError("HuggingFace client is not initialized.")

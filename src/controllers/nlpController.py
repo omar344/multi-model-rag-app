@@ -8,11 +8,11 @@ class NLPController(BaseController):
     def __init__(self, vectordb_client, generation_client, embedding_client):
         super().__init__()
 
-        slef.vectordb_client = vectordb_client
+        self.vectordb_client = vectordb_client
         self.generation_client = generation_client
         self.embedding_client = embedding_client
         
-    def create_collection_name(self, preoject_id:str):
+    def create_collection_name(self, project_id:str):
         return f"collection_{project_id}".strip()
     
     def reset_vectordb_collection(self, project: Project):
@@ -24,7 +24,7 @@ class NLPController(BaseController):
         collection_info = self.vectordb_client.get_collection_info(collection_name=collection_name)
         return collection_info
     
-    def index_into_vectordb(self, project: Project, chunks: List[DataChunk], do_rest: bool = False):
+    def index_into_vectordb(self, project: Project, chunks: List[DataChunk], do_reset: bool = False):
         
         # get collection name
         collection_name = self.create_collection_name(project_id=project.project_id)
