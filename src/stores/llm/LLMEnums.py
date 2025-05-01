@@ -5,6 +5,7 @@ class LLMEnums(Enum):
     HUGGINGFACE = "HUGGINGFACE"
     OVHCLOUD = "OVHCLOUD"
     OPENAI = "OPENAI"
+    AZURE_OPENAI = "AZURE_OPENAI"
     
     
 class GroqEnum(Enum):

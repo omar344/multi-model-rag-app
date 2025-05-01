@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     
     OPENAI_API_KEY: str = None
     OPENAI_API_URL: str = None
+    OPENAI_API_VERSION: str = None
+    AZURE_OPENAI_API_KEY: str = None
+    AZURE_OPENAI_ENDPOINT: str = None
+    AZURE_OPENAI_API_VERSION: str = None
     GROQ_API_KEY: str = None
     HuggingFace_API_KEY: str = None
     OVHCloud_API_KEY: str = None

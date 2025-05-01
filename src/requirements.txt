@@ -21,4 +21,5 @@ accelerate==0.22.0
 groq==0.22.0
 sentence-transformers==4.1.0
 openai==1.75.0
+azure-core==1.26.0
 qdrant-client==1.14.2
