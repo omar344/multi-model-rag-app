@@ -23,7 +23,7 @@ class QdrantDBProvider(VectorDBInterface):
         self.client = QdrantClient(path=self.db_path)
         
     def disconnect(self):
-        seld.client = None
+        self.client = None
         
     def is_collection_existed(self, collection_name: str) -> bool:
         return self.client.collection_exists(collection_name=collection_name)
