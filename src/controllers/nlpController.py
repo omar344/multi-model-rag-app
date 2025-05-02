@@ -1,55 +1,165 @@
 from .BaseController import BaseController
 from models.db_schemes import Project, DataChunk
 from stores.llm.LLMEnums import DocumentTypeEnum
+import json
 from typing import List
 
 class NLPController(BaseController):
     
-    def __init__(self, vectordb_client, generation_client, embedding_client):
+    def __init__(self, vectordb_client, generation_client, 
+                 embedding_client):
         super().__init__()
 
         self.vectordb_client = vectordb_client
         self.generation_client = generation_client
         self.embedding_client = embedding_client
-        
-    def create_collection_name(self, project_id:str):
+        # self.template_parser = template_parser
+
+    def create_collection_name(self, project_id: str):
         return f"collection_{project_id}".strip()
     
-    def reset_vectordb_collection(self, project: Project):
+    def reset_vector_db_collection(self, project: Project):
         collection_name = self.create_collection_name(project_id=project.project_id)
         return self.vectordb_client.delete_collection(collection_name=collection_name)
-        
-    def get_vectordb_collection_info(self, project: Project):
+    
+    def get_vector_db_collection_info(self, project: Project):
         collection_name = self.create_collection_name(project_id=project.project_id)
         collection_info = self.vectordb_client.get_collection_info(collection_name=collection_name)
-        return collection_info
+
+        return json.loads(
+            json.dumps(collection_info, default=lambda x: x.__dict__)
+        )
     
-    def index_into_vectordb(self, project: Project, chunks: List[DataChunk], do_reset: bool = False):
-        
-        # get collection name
+    def index_into_vector_db(self, project: Project, chunks: List[DataChunk],
+                                   chunks_ids: List[int], 
+                                   do_reset: bool = False):
+        # Filter out image chunks, only allow text and tables
+        filtered_chunks = [
+            c for c in chunks
+            if c.chunk_metadata.get("type") in ("text", "table")
+        ]
+
+        if not filtered_chunks:
+            print("No valid (text/table) chunks to embed for this batch.")
+            return 0
+
+        # step1: get collection name
         collection_name = self.create_collection_name(project_id=project.project_id)
-        
-        # manage items
-        texts = [chunk.chunk_text for chunk in chunks]
-        metadata = [chunk.chunk_metadata for chunk in chunks]
+
+        # step2: manage items
+        texts = [c.chunk_text for c in filtered_chunks]
+        metadata = [c.chunk_metadata for c in filtered_chunks]
         vectors = [
-            self.embedding_client.embed_text(text=text, document_type=DocumentTypeEnum.DOCUMENT.value)
+            self.embedding_client.embed_text(
+                text=text, 
+                document_type=DocumentTypeEnum.DOCUMENT.value
+            )
             for text in texts
         ]
-        
-        # create collection if it doesn't exist
+
+        print("Embedding size:", len(vectors[0]) if vectors else "No vectors")
+        print("Collection embedding_size:", self.embedding_client.embedding_size)
+
+        # Validate all vectors are not None and have correct size
+        valid_vectors = []
+        valid_texts = []
+        valid_metadata = []
+        valid_ids = []
+        for i, v in enumerate(vectors):
+            if v is not None and len(v) == self.embedding_client.embedding_size:
+                valid_vectors.append(v)
+                valid_texts.append(texts[i])
+                valid_metadata.append(metadata[i])
+                valid_ids.append(chunks_ids[i])
+            else:
+                print(f"Skipping vector at index {i}: None or wrong size ({None if v is None else len(v)})")
+
+        # step3: create collection if not exists
         _ = self.vectordb_client.create_collection(
             collection_name=collection_name,
             embedding_size=self.embedding_client.embedding_size,
-            do_reset=do_reset
+            do_reset=do_reset,
         )
-        
-        # insert into vector db
-        _ = self.vectordb_client.insert_many(
-            coolection_name=collection_name,
-            texts=texts,
-            metadata=metadata,
-            vectors=vectors
+
+        # step4: insert into vector db
+        inserted = self.vectordb_client.insert_many(
+            collection_name=collection_name,
+            texts=valid_texts,
+            metadata=valid_metadata,
+            vectors=valid_vectors,
+            record_ids=valid_ids,
         )
+
+        inserted_count = len(valid_vectors) if inserted else 0
+        print(f"Inserted {inserted_count} vectors into collection '{collection_name}'.")
+
+        return inserted_count
+
+    def search_vector_db_collection(self, project: Project, text: str, limit: int = 10):
+
+        # step1: get collection name
+        collection_name = self.create_collection_name(project_id=project.project_id)
+
+        # step2: get text embedding vector
+        vector = self.embedding_client.embed_text(text=text, 
+                                                 document_type=DocumentTypeEnum.QUERY.value)
+
+        if not vector or len(vector) == 0:
+            return False
+
+        # step3: do semantic search
+        results = self.vectordb_client.search_by_vector(
+            collection_name=collection_name,
+            vector=vector,
+            limit=limit
+        )
+
+        if not results:
+            return False
+
+        return results
+    
+    def answer_rag_question(self, project: Project, query: str, limit: int = 10):
         
-        return True
+        answer, full_prompt, chat_history = None, None, None
+
+        # step1: retrieve related documents
+        retrieved_documents = self.search_vector_db_collection(
+            project=project,
+            text=query,
+            limit=limit,
+        )
+
+        if not retrieved_documents or len(retrieved_documents) == 0:
+            return answer, full_prompt, chat_history
+        
+        # step2: Construct LLM prompt
+        system_prompt = self.template_parser.get("rag", "system_prompt")
+
+        documents_prompts = "\n".join([
+            self.template_parser.get("rag", "document_prompt", {
+                    "doc_num": idx + 1,
+                    "chunk_text": doc.text,
+            })
+            for idx, doc in enumerate(retrieved_documents)
+        ])
+
+        footer_prompt = self.template_parser.get("rag", "footer_prompt")
+
+        # step3: Construct Generation Client Prompts
+        chat_history = [
+            self.generation_client.construct_prompt(
+                prompt=system_prompt,
+                role=self.generation_client.enums.SYSTEM.value,
+            )
+        ]
+
+        full_prompt = "\n\n".join([ documents_prompts,  footer_prompt])
+
+        # step4: Retrieve the Answer
+        answer = self.generation_client.generate_text(
+            prompt=full_prompt,
+            chat_history=chat_history
+        )
+
+        return answer, full_prompt, chat_history
