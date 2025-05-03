@@ -1,6 +1,7 @@
 from ..LLMInterface import LLMInterface
 from openai import AzureOpenAI
 from azure.core.credentials import AzureKeyCredential
+import requests
 import logging
 
 class AzureOpenAIProvider(LLMInterface):
@@ -70,24 +71,53 @@ class AzureOpenAIProvider(LLMInterface):
         return response.choices[0].message["content"]
 
     def embed_text(self, text: str, document_type: str = None):
-        if not self.client:
-            self.logger.error("AzureOpenAI client was not set")
+        """
+        If document_type == "image", treat text as base64 or URL for image.
+        Otherwise, treat as text.
+        """
+        if not self.endpoint or not self.api_key:
+            self.logger.error("Azure CLIP endpoint or API key not set")
             return None
 
-        if not self.embedding_model_id:
-            self.logger.error("Embedding model for AzureOpenAI was not set")
+        columns = ["image", "text"]
+        if document_type == "image":
+            data_row = [text, ""]
+        else:
+            data_row = ["", text]
+
+        payload = {
+            "input_data": {
+                "columns": columns,
+                "index": [0],
+                "data": [data_row]
+            }
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+        try:
+            response = requests.post(self.endpoint, json=payload, headers=headers, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+        except Exception as e:
+            self.logger.error(f"Error while embedding with Azure CLIP: {e}")
             return None
 
-        response = self.client.embeddings.create(
-            input=text,
-            model=self.embedding_model_id  # deployment name
-        )
-
-        if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:
-            self.logger.error("Error while embedding text with AzureOpenAI")
+        if not isinstance(result, list) or not result:
+            self.logger.error("Invalid response from Azure CLIP endpoint")
             return None
 
-        return response.data[0].embedding
+        features = result[0]
+        if document_type == "image" and "image_features" in features:
+            return features["image_features"]
+        elif "text_features" in features:
+            return features["text_features"]
+        else:
+            self.logger.error("No features found in Azure CLIP response")
+            return None
 
     def embed_image(self, image_base64: str):
         raise NotImplementedError("Image embedding not implemented for AzureOpenAI.")

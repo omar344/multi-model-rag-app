@@ -33,64 +33,53 @@ class NLPController(BaseController):
     def index_into_vector_db(self, project: Project, chunks: List[DataChunk],
                                    chunks_ids: List[int], 
                                    do_reset: bool = False):
-        # Filter out image chunks, only allow text and tables
-        filtered_chunks = [
-            c for c in chunks
-            if c.chunk_metadata.get("type") in ("text", "table")
-        ]
-
-        if not filtered_chunks:
-            print("No valid (text/table) chunks to embed for this batch.")
+        if not chunks:
+            print("No chunks to embed for this batch.")
             return 0
 
-        # step1: get collection name
         collection_name = self.create_collection_name(project_id=project.project_id)
 
-        # step2: manage items
-        texts = [c.chunk_text for c in filtered_chunks]
-        metadata = [c.chunk_metadata for c in filtered_chunks]
-        vectors = [
-            self.embedding_client.embed_text(
-                text=text, 
-                document_type=DocumentTypeEnum.DOCUMENT.value
-            )
-            for text in texts
-        ]
-
-        print("Embedding size:", len(vectors[0]) if vectors else "No vectors")
-        print("Collection embedding_size:", self.embedding_client.embedding_size)
-
-        # Validate all vectors are not None and have correct size
-        valid_vectors = []
-        valid_texts = []
-        valid_metadata = []
+        texts = []
+        metadata = []
+        vectors = []
         valid_ids = []
-        for i, v in enumerate(vectors):
-            if v is not None and len(v) == self.embedding_client.embedding_size:
-                valid_vectors.append(v)
-                valid_texts.append(texts[i])
-                valid_metadata.append(metadata[i])
+
+        for i, c in enumerate(chunks):
+            chunk_type = c.chunk_metadata.get("type")
+            if chunk_type == "image" and c.chunk_image:
+                vector = self.embedding_client.embed_text(
+                    text=c.chunk_image, document_type=DocumentTypeEnum.IMAGE.value
+                )
+                text_val = ""  # or store image name/path if needed
+            else:
+                vector = self.embedding_client.embed_text(
+                    text=c.chunk_text, document_type=DocumentTypeEnum.DOCUMENT.value
+                )
+                text_val = c.chunk_text
+
+            if vector is not None and len(vector) == self.embedding_client.embedding_size:
+                vectors.append(vector)
+                texts.append(text_val)
+                metadata.append(c.chunk_metadata)
                 valid_ids.append(chunks_ids[i])
             else:
-                print(f"Skipping vector at index {i}: None or wrong size ({None if v is None else len(v)})")
+                print(f"Skipping vector at index {i}: None or wrong size ({None if vector is None else len(vector)})")
 
-        # step3: create collection if not exists
         _ = self.vectordb_client.create_collection(
             collection_name=collection_name,
             embedding_size=self.embedding_client.embedding_size,
             do_reset=do_reset,
         )
 
-        # step4: insert into vector db
         inserted = self.vectordb_client.insert_many(
             collection_name=collection_name,
-            texts=valid_texts,
-            metadata=valid_metadata,
-            vectors=valid_vectors,
+            texts=texts,
+            metadata=metadata,
+            vectors=vectors,
             record_ids=valid_ids,
         )
 
-        inserted_count = len(valid_vectors) if inserted else 0
+        inserted_count = len(vectors) if inserted else 0
         print(f"Inserted {inserted_count} vectors into collection '{collection_name}'.")
 
         return inserted_count

@@ -30,4 +30,5 @@ class HuggingFaceEnum(Enum):
 
 class DocumentTypeEnum(Enum):
     DOCUMENT = "document"
-    QUERY = "query"   
+    QUERY = "query"
+    IMAGE = "image"   

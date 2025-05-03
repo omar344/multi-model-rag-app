@@ -43,6 +43,7 @@ system level requirments for unstructured
 ```bash
 apt-get install poppler-utils tesseract-ocr libmagic-dev
 ```
+
 ### Setup the environment variables
 
 ```bash
@@ -65,3 +66,10 @@ set your environment variables in the `.env` file. like `OPEN_API_KEY` value.
 ## Postman Collection
 
 Download the POSTMAN collection from [/assets/multi-model-rag-app.postman_collection.json](/assets\multi-model-rag-app.postman_collection.json)
+
+
+## Azure CLI
+
+```
+    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+```
