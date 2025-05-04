@@ -23,5 +23,3 @@ sentence-transformers==4.1.0
 openai==1.75.0
 azure-core==1.31.0
 qdrant-client==1.14.2
-azure-ai-ml==1.26.5
-azure-identity==1.21.0
