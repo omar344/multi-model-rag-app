@@ -20,9 +20,5 @@ class LLMInterface(ABC):
         pass
     
     @abstractmethod
-    def embed_image(self, image_base64: str):
-        pass
-    
-    @abstractmethod
     def construct_prompt(self, prompt: str, role: str):
         pass

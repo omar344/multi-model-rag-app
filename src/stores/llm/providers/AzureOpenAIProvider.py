@@ -3,6 +3,10 @@ from openai import AzureOpenAI
 from azure.core.credentials import AzureKeyCredential
 import requests
 import logging
+from transformers import CLIPTokenizer
+from PIL import Image as PILImage
+import base64
+import io
 
 class AzureOpenAIProvider(LLMInterface):
     def __init__(self, api_key: str, endpoint: str, api_version: str,
@@ -25,9 +29,9 @@ class AzureOpenAIProvider(LLMInterface):
             api_key=self.api_key,
             api_version=self.api_version,
             azure_endpoint=self.endpoint
-            # credential=AzureKeyCredential(self.api_key)
         )
         self.logger = logging.getLogger(__name__)
+        self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14-336")
 
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id
@@ -70,6 +74,23 @@ class AzureOpenAIProvider(LLMInterface):
 
         return response.choices[0].message["content"]
 
+    def _truncate_text_to_77_tokens(self, text: str) -> str:
+        input_ids = self.tokenizer(text, truncation=True, max_length=75, add_special_tokens=True)["input_ids"]
+        return self.tokenizer.decode(input_ids)
+
+    def _resize_image_336(self, image_b64: str) -> str:
+        try:
+            image_data = base64.b64decode(image_b64)
+            image = PILImage.open(io.BytesIO(image_data)).convert("RGB")
+            image = image.resize((336, 336), PILImage.BICUBIC)
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG")
+            resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            return resized_b64
+        except Exception as e:
+            self.logger.error(f"Failed to resize image: {e}")
+            return image_b64  # fallback to original
+
     def embed_text(self, text: str, document_type: str = None):
         """
         If document_type == "image", treat text as base64 or URL for image.
@@ -81,14 +102,15 @@ class AzureOpenAIProvider(LLMInterface):
 
         columns = ["image", "text"]
         if document_type == "image":
+            text = self._resize_image_336(text)
             data_row = [text, ""]
         else:
+            text = self._truncate_text_to_77_tokens(text)
             data_row = ["", text]
 
         payload = {
             "input_data": {
                 "columns": columns,
-                "index": [0],
                 "data": [data_row]
             }
         }

@@ -94,9 +94,6 @@ class OpenAIProvider(LLMInterface):
             return None
 
         return response.data[0].embedding
-    
-    def embed_image(self, image_base64: str):
-        pass
 
     def construct_prompt(self, prompt: str, role: str):
         return {
