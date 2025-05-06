@@ -4,7 +4,7 @@ This is a implementation of the RAG multi model for question answering.
 
 ## Requirements
 
-- Python 3.8 or later
+- Python 3.10 or later
 
 #### Install Python using MiniConda
 

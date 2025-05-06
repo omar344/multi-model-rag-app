@@ -46,11 +46,11 @@ class NLPController(BaseController):
 
         for i, c in enumerate(chunks):
             chunk_type = c.chunk_metadata.get("type")
-            if chunk_type == "image" and c.chunk_image:
+            if chunk_type == "image" and c.chunk_text:
                 vector = self.embedding_client.embed_text(
-                    text=c.chunk_image, document_type=DocumentTypeEnum.IMAGE.value
+                    text=c.chunk_text, document_type=DocumentTypeEnum.IMAGE.value
                 )
-                text_val = ""  # or store image name/path if needed
+                text_val = c.chunk_text
             else:
                 vector = self.embedding_client.embed_text(
                     text=c.chunk_text, document_type=DocumentTypeEnum.DOCUMENT.value
@@ -82,7 +82,7 @@ class NLPController(BaseController):
         inserted_count = len(vectors) if inserted else 0
         print(f"Inserted {inserted_count} vectors into collection '{collection_name}'.")
 
-        return inserted_count
+        return True
 
     def search_vector_db_collection(self, project: Project, text: str, limit: int = 10):
 
