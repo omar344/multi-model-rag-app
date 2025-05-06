@@ -15,35 +15,27 @@ nlp_router = APIRouter(
 
 @nlp_router.post("/index/push/{project_id}")
 async def index_project(request: Request, project_id: str, push_request: PushRequest):
+
     project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
     )
+
     chunk_model = await ChunkModel.create_instance(
         db_client=request.app.db_client
     )
 
-    # Validate project existence
-    project = await project_model.get_project_or_create_one(project_id=project_id)
-    if not project or not getattr(project, "id", None):
+    project = await project_model.get_project_or_create_one(
+        project_id=project_id
+    )
+
+    if not project:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value,
-                "detail": "Project does not exist."
+                "signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value
             }
         )
-
-    # Validate that there are chunks to index
-    total_chunks = await chunk_model.get_project_chunks(project_id=project.id, page_no=1)
-    if not total_chunks or len(total_chunks) == 0:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "signal": ResponseSignal.NO_CHUNKS_ERROR.value,
-                "detail": "No chunks found for this project."
-            }
-        )
-
+    
     nlp_controller = NLPController(
         vectordb_client=request.app.vectordb_client,
         generation_client=request.app.generation_client,
@@ -59,51 +51,38 @@ async def index_project(request: Request, project_id: str, push_request: PushReq
         page_chunks = await chunk_model.get_project_chunks(project_id=project.id, page_no=page_no)
         if len(page_chunks):
             page_no += 1
-
+        
         if not page_chunks or len(page_chunks) == 0:
             has_records = False
             break
 
-        chunks_ids = list(range(idx, idx + len(page_chunks)))
+        chunks_ids =  list(range(idx, idx + len(page_chunks)))
         idx += len(page_chunks)
-
-        inserted_count = nlp_controller.index_into_vector_db(
+        
+        print(f"the number of chunks passed to index from nlp route at page({page_no}) : {len(page_chunks)}")
+        is_inserted = nlp_controller.index_into_vector_db(
             project=project,
             chunks=page_chunks,
-            do_reset=push_request.do_reset,
+            do_reset=(push_request.do_reset if page_no == 2 else 0),  # Only reset on first batch,
             chunks_ids=chunks_ids
         )
 
-        if not inserted_count or inserted_count == 0:
+        if not is_inserted:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={
-                    "signal": ResponseSignal.VECTORDB_INSERTION_ERROR.value,
-                    "inserted_items_count": inserted_items_count,
-                    "detail": "No vectors were inserted for this batch."
+                    "signal": ResponseSignal.VECTORDB_INSERTION_ERROR.value
                 }
             )
-
-        inserted_items_count += inserted_count
-
-    # Final validation: did we insert anything at all?
-    if inserted_items_count == 0:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "signal": ResponseSignal.VECTORDB_INSERTION_ERROR.value,
-                "inserted_items_count": 0,
-                "detail": "No vectors were inserted for this project."
-            }
-        )
-
+        
+        inserted_items_count += len(page_chunks)
+        
     return JSONResponse(
         content={
             "signal": ResponseSignal.VECTORDB_INSERTION_SUCCESS.value,
             "inserted_items_count": inserted_items_count
         }
     )
-
 @nlp_router.get("/index/info/{project_id}")
 async def get_project_index_info(request: Request, project_id: str):
     
@@ -145,7 +124,6 @@ async def search_index(request: Request, project_id: str, search_request: Search
         vectordb_client=request.app.vectordb_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
-        # template_parser=request.app.template_parser,
     )
 
     results = nlp_controller.search_vector_db_collection(
