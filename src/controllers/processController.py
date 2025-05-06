@@ -53,7 +53,7 @@ class ProcessController(BaseController):
 
         if isinstance(el, Table):
             return Document(
-                page_content=getattr(el.metadata, "text_as_html", str(el)),
+                page_content=str(el),
                 metadata={**meta, "type": "table"},
             )
         elif isinstance(el, NarrativeText):
@@ -73,16 +73,22 @@ class ProcessController(BaseController):
 
     def flatten_elements(self, elements):
         docs = []
+        seen_ids = set()
         for el in elements:
+            # Use id(el) to uniquely identify each element object
             if isinstance(el, CompositeElement) and hasattr(el.metadata, "orig_elements"):
                 for sub in el.metadata.orig_elements:
-                    doc = self.classify_element(sub)
+                    if id(sub) not in seen_ids:
+                        doc = self.classify_element(sub)
+                        if doc:
+                            docs.append(doc)
+                        seen_ids.add(id(sub))
+            else:
+                if id(el) not in seen_ids:
+                    doc = self.classify_element(el)
                     if doc:
                         docs.append(doc)
-            else:
-                doc = self.classify_element(el)
-                if doc:
-                    docs.append(doc)
+                    seen_ids.add(id(el))
         return docs
 
     def process_pdf(self, path: str) -> List[Document]:
@@ -94,9 +100,8 @@ class ProcessController(BaseController):
             extract_image_block_to_payload=True,
             include_metadata=True,
             chunking_strategy="by_title",
-            max_characters=4000,
-            combine_text_under_n_chars=3000,
-            new_after_n_chars=3000,
+            max_characters=400,
+            overlap=20,
         )
         return self.flatten_elements(elements)
 
@@ -127,4 +132,3 @@ class ProcessController(BaseController):
         )
 
         return file_content
-    
