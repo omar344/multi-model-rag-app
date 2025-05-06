@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     HuggingFace_API_KEY: str = None
     OVHCloud_API_KEY: str = None
     GITHUB_TOKEN: str = None
-
+    VOYAGE_AI_KEY: str = None
     GENERATION_MODEL_ID: str = None
     EMBEDDING_MODEL_ID: str = None
     EMBEDDING_MODEL_SIZE: int = None

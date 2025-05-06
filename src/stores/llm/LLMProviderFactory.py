@@ -1,5 +1,5 @@
 from .LLMEnums import LLMEnums
-from .providers import HuggingFaceProvider, OpenAIProvider, GroqProvider, AzureOpenAIProvider
+from .providers import HuggingFaceProvider, OpenAIProvider, GroqProvider, AzureOpenAIProvider, VoyageAIProvider
 
 class LLMProviderFactory:
     def __init__(self, config: dict):
@@ -33,6 +33,13 @@ class LLMProviderFactory:
         if provider == LLMEnums.GROQ.value:
             return GroqProvider(
                 api_key=self.config.GROQ_API_KEY,
+                default_input_max_characters=self.config.INPUT_DEFAULT_MAX_CHARACTERS,
+                default_generation_max_output_tokens=self.config.GENERATION_DEFAULT_MAX_TOKENS,
+                default_generation_temperature=self.config.GENERATION_DEFAULT_TEMPERATURE
+            )
+        if provider == LLMEnums.VOYAGEAI.value:
+            return VoyageAIProvider(
+                api_key=self.config.VOYAGE_AI_KEY,
                 default_input_max_characters=self.config.INPUT_DEFAULT_MAX_CHARACTERS,
                 default_generation_max_output_tokens=self.config.GENERATION_DEFAULT_MAX_TOKENS,
                 default_generation_temperature=self.config.GENERATION_DEFAULT_TEMPERATURE

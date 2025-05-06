@@ -6,6 +6,7 @@ class LLMEnums(Enum):
     OVHCLOUD = "OVHCLOUD"
     OPENAI = "OPENAI"
     AZURE_OPENAI = "AZURE_OPENAI"
+    VOYAGEAI = "VOYAGEAI"
     
     
 class GroqEnum(Enum):
