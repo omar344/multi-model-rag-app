@@ -28,6 +28,11 @@ class HuggingFaceEnum(Enum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
+    
+class AzureOpenAIEnum(Enum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
 
 class DocumentTypeEnum(Enum):
     DOCUMENT = "document"

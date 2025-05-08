@@ -1,4 +1,5 @@
 from ..LLMInterface import LLMInterface
+from ..LLMEnums import AzureOpenAIEnum
 from openai import AzureOpenAI
 from azure.core.credentials import AzureKeyCredential
 import requests
@@ -25,6 +26,8 @@ class AzureOpenAIProvider(LLMInterface):
         self.embedding_model_id = None
         self.embedding_size = None
 
+        self.enum = AzureOpenAIEnum
+        
         self.client = AzureOpenAI(
             api_key=self.api_key,
             api_version=self.api_version,
@@ -140,10 +143,7 @@ class AzureOpenAIProvider(LLMInterface):
         else:
             self.logger.error("No features found in Azure CLIP response")
             return None
-
-    def embed_image(self, image_base64: str):
-        raise NotImplementedError("Image embedding not implemented for AzureOpenAI.")
-
+        
     def construct_prompt(self, prompt: str, role: str):
         return {
             "role": role,
