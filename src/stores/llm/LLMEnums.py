@@ -7,6 +7,7 @@ class LLMEnums(Enum):
     OPENAI = "OPENAI"
     AZURE_OPENAI = "AZURE_OPENAI"
     VOYAGEAI = "VOYAGEAI"
+    GITHUB_MODELS = "GITHUB_MODELS"
     
     
 class GroqEnum(Enum):

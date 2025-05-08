@@ -40,6 +40,7 @@ async def index_project(request: Request, project_id: str, push_request: PushReq
         vectordb_client=request.app.vectordb_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
+        template_parser=request.app.template_parser
     )
 
     has_records = True

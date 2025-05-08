@@ -22,5 +22,6 @@ groq==0.22.0
 sentence-transformers==4.1.0
 openai==1.75.0
 azure-core==1.31.0
+azure-ai-inference==1.0.0b9
 qdrant-client==1.14.2
 voyageai==0.3.2

@@ -31,7 +31,6 @@ class TemplateParser:
             group_path = os.path.join(self.current_path, "locales", self.default_language, f"{group}.py" )
             targeted_language = self.default_language
 
-        print(f"{group_path}")
         if not os.path.exists(group_path):
             return None
         
