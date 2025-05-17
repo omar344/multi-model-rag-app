@@ -23,7 +23,6 @@ class TemplateParser:
     def get(self, group: str, key: str, vars: dict={}):
         if not group or not key:
             return None
-        print(f"1: {group}, {key}, {str(vars)}")
         
         group_path = os.path.join(self.current_path, "locales", self.language, f"{group}.py" )
         targeted_language = self.language

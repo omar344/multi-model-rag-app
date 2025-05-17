@@ -1,0 +1,137 @@
+from fastapi import APIRouter, UploadFile, Request, status, Depends
+from fastapi.responses import JSONResponse
+from helpers.config import get_settings, Settings
+from controllers import DataController, ProjectController, ProcessController, NLPController
+from models.ProjectModel import ProjectModel
+from models.AssetModel import AssetModel
+from models.ChunkModel import ChunkModel
+from models.db_schemes import Asset, DataChunk
+from models.enums.AssetTypeEnum import AssetTypeEnum
+from models.enums.ProcessingEnum import ProcessingEnum
+from models import ResponseSignal
+from routes.schemes.nlpScheme import SearchRequest
+
+import os
+import aiofiles
+import logging
+
+logger = logging.getLogger("uvicorn.error")
+
+rag_router = APIRouter(
+    prefix="/api/v1/rag",
+    tags=["api_v1", "rag"]
+)
+
+@rag_router.post("/upload_file/{project_id}")
+async def upload_and_index(
+    request: Request,
+    project_id: str,
+    file: UploadFile,
+    app_settings: Settings = Depends(get_settings),
+):
+    # --- Project setup
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    project = await project_model.get_project_or_create_one(project_id=project_id)
+
+    # --- Validate and save file
+    data_controller = DataController()
+    is_valid, result_signal = data_controller.validate_uploaded_file(file=file)
+    if not is_valid:
+        return JSONResponse(status_code=400, content={"signal": result_signal})
+
+    file_path, file_id = data_controller.generate_unique_filepath(file.filename, project_id)
+    try:
+        async with aiofiles.open(file_path, "wb") as f:
+            while chunk := await file.read(app_settings.FILE_DEFAULT_CHUNK_SIZE):
+                await f.write(chunk)
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        return JSONResponse(status_code=400, content={"signal": ResponseSignal.FILE_UPLOAD_FAILED.value})
+
+    # --- Store in DB
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+    asset_record = await asset_model.create_asset(Asset(
+        asset_project_id=project.id,
+        asset_type=AssetTypeEnum.FILE.value,
+        asset_name=file_id,
+        asset_size=os.path.getsize(file_path)
+    ))
+
+    # --- Process file into chunks
+    process_controller = ProcessController(project_id=project_id)
+    content = process_controller.get_file_content(file_id=file_id)
+    chunks = process_controller.process_file_content(file_content=content, file_id=file_id)
+
+    if not chunks:
+        return JSONResponse(status_code=400, content={"signal": ResponseSignal.PROCESSING_FAILED.value})
+
+    chunk_model = await ChunkModel.create_instance(db_client=request.app.db_client)
+    ext = process_controller.get_file_extension(file_id)
+    file_type_enum = ProcessingEnum(ext)
+
+    chunk_records = [
+        DataChunk(
+            chunk_text=chunk.page_content,
+            chunk_metadata=chunk.metadata,
+            chunk_order=i+1,
+            chunk_project_id=project.id,
+            chunk_asset_id=asset_record.id,
+            file_type=file_type_enum.value
+        )
+        for i, chunk in enumerate(chunks)
+    ]
+
+    await chunk_model.insert_many_chunks(chunks=chunk_records)
+
+    # --- Index to vector DB
+    nlp_controller = NLPController(
+        vectordb_client=request.app.vectordb_client,
+        generation_client=request.app.generation_client,
+        embedding_client=request.app.embedding_client,
+        template_parser=request.app.template_parser
+    )
+
+    is_indexed = nlp_controller.index_into_vector_db(
+        project=project,
+        chunks=chunk_records,
+        do_reset=True,
+        chunks_ids=list(range(len(chunk_records)))
+    )
+
+    if not is_indexed:
+        return JSONResponse(status_code=400, content={"signal": ResponseSignal.VECTORDB_INSERTION_ERROR.value})
+
+    return JSONResponse(content={
+        "signal": ResponseSignal.FILE_UPLOAD_SUCCESS.value,
+        "file_id": asset_record.asset_name,
+        "inserted_chunks": len(chunk_records)
+    })
+
+
+@rag_router.post("/ask/{project_id}")
+async def ask_question(request: Request, project_id: str, search_request: SearchRequest):
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    project = await project_model.get_project_or_create_one(project_id=project_id)
+
+    nlp_controller = NLPController(
+        vectordb_client=request.app.vectordb_client,
+        generation_client=request.app.generation_client,
+        embedding_client=request.app.embedding_client,
+        template_parser=request.app.template_parser,
+    )
+
+    answer, full_prompt, chat_history = nlp_controller.answer_rag_question(
+        project=project,
+        query=search_request.text,
+        limit=search_request.limit,
+    )
+
+    if not answer:
+        return JSONResponse(status_code=400, content={"signal": ResponseSignal.RAG_ANSWER_ERROR.value})
+
+    return JSONResponse(content={
+        "signal": ResponseSignal.RAG_ANSWER_SUCCESS.value,
+        "answer": answer,
+        "full_prompt": full_prompt,
+        "chat_history": chat_history
+    })
