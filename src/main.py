@@ -10,14 +10,13 @@ from stores.llm.templates.template_parser import TemplateParser
 app = FastAPI()
 
 origins = [
-    "https://rag-chat-green.vercel.app/",
     "http://192.168.1.142:3000"
 ]
 
     
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

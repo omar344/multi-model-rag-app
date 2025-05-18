@@ -14,6 +14,7 @@ from routes.schemes.nlpScheme import SearchRequest
 import os
 import aiofiles
 import logging
+import uuid
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -22,13 +23,15 @@ rag_router = APIRouter(
     tags=["api_v1", "rag"]
 )
 
-@rag_router.post("/upload_file/{project_id}")
+@rag_router.post("/upload_file")
 async def upload_and_index(
     request: Request,
-    project_id: str,
     file: UploadFile,
     app_settings: Settings = Depends(get_settings),
 ):
+    # --- Auto-generate project_id
+    project_id = uuid.uuid4().hex
+
     # --- Project setup
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
     project = await project_model.get_project_or_create_one(project_id=project_id)
@@ -103,6 +106,7 @@ async def upload_and_index(
 
     return JSONResponse(content={
         "signal": ResponseSignal.FILE_UPLOAD_SUCCESS.value,
+        "project_id": project_id,
         "file_id": asset_record.asset_name,
         "inserted_chunks": len(chunk_records)
     })
