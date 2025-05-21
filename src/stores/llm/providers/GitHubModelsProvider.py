@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from ..LLMInterface import LLMInterface
 from azure.ai.inference import EmbeddingsClient
 from azure.core.credentials import AzureKeyCredential
+from azure.core.pipeline.transport import RequestsTransport
+from azure.core.pipeline.policies import RetryPolicy
 import os
 import logging
 
@@ -21,9 +23,14 @@ class GitHubModelsProvider(LLMInterface):
         self.embedding_model_id = None
         self.embedding_size = None
 
+
+        transport = RequestsTransport(connection_timeout=30, read_timeout=30)
+        retry_policy = RetryPolicy(total_retries=1)
         self.client = EmbeddingsClient(
             endpoint=self.endpoint,
-            credential=AzureKeyCredential(self.api_key)
+            credential=AzureKeyCredential(self.api_key),
+            transport=transport,
+            retry_policy=retry_policy
         )
         self.logger = logging.getLogger(__name__)
 
@@ -72,11 +79,15 @@ class GitHubModelsProvider(LLMInterface):
             self.logger.error("Input to embed_text must be a string or list of strings.")
             return None
 
+        self.logger.info(f"Calling EmbeddingsClient.embed with model: {self.embedding_model_id} and {len(inputs)} input(s)")
         try:
+            self.logger.info("Sending embedding request...")
             response = self.client.embed(
                 input=inputs,
-                model=self.embedding_model_id
+                model=self.embedding_model_id,
             )
+            self.logger.info("Embedding request completed.")
+            self.logger.info("Received response from GitHub Models API.")
             # Return the embedding for the first input (for single input)
             if response.data and len(response.data) > 0:
                 return response.data[0].embedding
@@ -84,7 +95,11 @@ class GitHubModelsProvider(LLMInterface):
                 self.logger.error("No embedding returned from GitHub Models API.")
                 return None
         except Exception as e:
-            self.logger.error(f"Error while embedding with GitHub Models API: {e}")
+            error_str = str(e).lower()
+            if "rate limit" in error_str or "quota" in error_str or "429" in error_str:
+                self.logger.error("Rate limit or quota exceeded while embedding with GitHub Models API.")
+            else:
+                self.logger.error(f"Error while embedding with GitHub Models API: {e}")
             return None
 
     def construct_prompt(self, prompt: str, role: str):

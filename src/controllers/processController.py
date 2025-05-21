@@ -100,8 +100,8 @@ class ProcessController(BaseController):
             extract_image_block_to_payload=True,
             include_metadata=True,
             chunking_strategy="by_title",
-            max_characters=400,
-            overlap=20,
+            max_characters=1000,
+            overlap=100,
         )
         return self.flatten_elements(elements)
 

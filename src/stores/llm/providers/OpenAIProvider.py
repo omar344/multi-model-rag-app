@@ -41,9 +41,9 @@ class OpenAIProvider(LLMInterface):
     def process_text(self, text: str):
         return text[:self.default_input_max_characters].strip()
 
-    def generate_text(self, prompt: str, chat_history: list=[], max_output_tokens: int=None,
-                            temperature: float = None):
-        
+    def generate_text(self, prompt: str, chat_history: list = [], max_output_tokens: int = None,
+                      temperature: float = None):
+        self.logger.info("Starting OpenAI text generation.")
         if not self.client:
             self.logger.error("OpenAI client was not set")
             return None
@@ -51,30 +51,36 @@ class OpenAIProvider(LLMInterface):
         if not self.generation_model_id:
             self.logger.error("Generation model for OpenAI was not set")
             return None
-        
+
         max_output_tokens = max_output_tokens if max_output_tokens else self.default_generation_max_output_tokens
         temperature = temperature if temperature else self.default_generation_temperature
 
+        self.logger.debug(f"Appending user prompt to chat history. Prompt type: {type(prompt)}")
         chat_history.append(
             self.construct_prompt(prompt=prompt, role=OpenAIEnum.USER.value)
         )
 
-        response = self.client.chat.completions.create(
-            model = self.generation_model_id,
-            messages = chat_history,
-            max_tokens = max_output_tokens,
-            temperature = temperature
-        )
+        self.logger.info(f"Sending request to OpenAI: model={self.generation_model_id}, max_tokens={max_output_tokens}, temperature={temperature}")
+        try:
+            response = self.client.chat.completions.create(
+                model=self.generation_model_id,
+                messages=chat_history,
+                max_tokens=max_output_tokens,
+                temperature=temperature
+            )
+        except Exception as e:
+            self.logger.error(f"Exception during OpenAI completion: {e}")
+            return None
 
         if not response or not response.choices or len(response.choices) == 0 or not response.choices[0].message:
             self.logger.error("Error while generating text with OpenAI")
             return None
 
+        self.logger.info("Received response from OpenAI.")
         return response.choices[0].message.content
 
-
     def embed_text(self, text: str, document_type: str = None):
-        
+        self.logger.info("Starting OpenAI embedding.")
         if not self.client:
             self.logger.error("OpenAI client was not set")
             return None
@@ -82,27 +88,43 @@ class OpenAIProvider(LLMInterface):
         if not self.embedding_model_id:
             self.logger.error("Embedding model for OpenAI was not set")
             return 
-        
-        max_size = self.embedding_size or 512
+
+        max_size = self.embedding_size or 1536
         text = text[:max_size]
-        
-        response = self.client.embeddings.create(
-            model = self.embedding_model_id,
-            input = text,
-        )
+        self.logger.debug(f"Embedding text of length {len(text)} with model {self.embedding_model_id}")
+
+        try:
+            response = self.client.embeddings.create(
+                model=self.embedding_model_id,
+                input=text,
+            )
+        except Exception as e:
+            self.logger.error(f"Exception during OpenAI embedding: {e}")
+            return None
 
         if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:
             self.logger.error("Error while embedding text with OpenAI")
             return None
 
+        self.logger.info("Received embedding from OpenAI.")
         return response.data[0].embedding
 
     def construct_prompt(self, prompt: str, role: str):
+        self.logger.debug(f"Constructing prompt for role: {role}, prompt type: {type(prompt)}")
+        if isinstance(prompt, list):
+            # If the prompt is a list, use it directly as the content
+            self.logger.info("Prompt is a list (multimodal). Using as content.")
+            return {
+                "role": role,
+                "content": prompt
+            }
+        # Fallback for text-only prompts
+        self.logger.info("Prompt is text. Processing as text-only content.")
         return {
             "role": role,
             "content": self.process_text(prompt)
         }
-    
 
 
-    
+
+
