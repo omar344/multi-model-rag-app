@@ -1,10 +1,11 @@
-from fastapi import FastAPI, APIRouter, status, Request
+from fastapi import FastAPI, APIRouter, status, Request, Depends
 from fastapi.responses import JSONResponse
 from models import ResponseSignal
 from routes.schemes.nlpScheme import PushRequest, SearchRequest
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from controllers import NLPController
+from routes.auth import get_current_user
 import logging
 
 logger = logging.getLogger('uvicorn.error')
@@ -14,7 +15,9 @@ nlp_router = APIRouter(
 )
 
 @nlp_router.post("/index/push/{project_id}")
-async def index_project(request: Request, project_id: str, push_request: PushRequest):
+async def index_project(request: Request, project_id: str,
+                        push_request: PushRequest,
+                        current_user=Depends(get_current_user)):
 
     project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
@@ -25,7 +28,8 @@ async def index_project(request: Request, project_id: str, push_request: PushReq
     )
 
     project = await project_model.get_project_or_create_one(
-        project_id=project_id
+        project_id=project_id,
+        user_id=current_user.id
     )
 
     if not project:
@@ -49,7 +53,10 @@ async def index_project(request: Request, project_id: str, push_request: PushReq
     idx = 0
 
     while has_records:
-        page_chunks = await chunk_model.get_project_chunks(project_id=project.id, page_no=page_no)
+        page_chunks = await chunk_model.get_project_chunks(
+            project_id=project.id,
+            user_id=current_user.id
+        )
         if len(page_chunks):
             page_no += 1
         
@@ -84,42 +91,19 @@ async def index_project(request: Request, project_id: str, push_request: PushReq
             "inserted_items_count": inserted_items_count
         }
     )
-@nlp_router.get("/index/info/{project_id}")
-async def get_project_index_info(request: Request, project_id: str):
-    
-    project_model = await ProjectModel.create_instance(
-        db_client=request.app.db_client
-    )
-
-    project = await project_model.get_project_or_create_one(
-        project_id=project_id
-    )
-
-    nlp_controller = NLPController(
-        vectordb_client=request.app.vectordb_client,
-        generation_client=request.app.generation_client,
-        embedding_client=request.app.embedding_client,
-        template_parser=request.app.template_parser
-    )
-
-    collection_info = nlp_controller.get_vector_db_collection_info(project=project)
-
-    return JSONResponse(
-        content={
-            "signal": ResponseSignal.VECTORDB_COLLECTION_RETRIEVED.value,
-            "collection_info": collection_info
-        }
-    )
 
 @nlp_router.post("/index/search/{project_id}")
-async def search_index(request: Request, project_id: str, search_request: SearchRequest):
+async def search_index(request: Request, project_id: str,
+                       search_request: SearchRequest,
+                       current_user=Depends(get_current_user)):
     
     project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
     )
 
     project = await project_model.get_project_or_create_one(
-        project_id=project_id
+        project_id=project_id,
+        user_id=current_user.id
     )
 
     nlp_controller = NLPController(
@@ -149,14 +133,16 @@ async def search_index(request: Request, project_id: str, search_request: Search
     )
 
 @nlp_router.post("/index/answer/{project_id}")
-async def answer_rag(request: Request, project_id: str, search_request: SearchRequest):
+async def answer_rag(request: Request, project_id: str, search_request: SearchRequest,
+                     current_user=Depends(get_current_user)):
     
     project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
     )
 
     project = await project_model.get_project_or_create_one(
-        project_id=project_id
+        project_id=project_id,
+        user_id=current_user.id
     )
 
     nlp_controller = NLPController(

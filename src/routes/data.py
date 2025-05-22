@@ -13,6 +13,7 @@ from models.AssetModel import AssetModel
 from models.db_schemes import DataChunk, Asset
 from models.enums.AssetTypeEnum import AssetTypeEnum
 from models.enums.ProcessingEnum import ProcessingEnum
+from routes.auth import get_current_user
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -23,7 +24,8 @@ data_router = APIRouter(
 
 @data_router.post("/upload/{project_id}")
 async def upload_data(request: Request, project_id: str, file: UploadFile,
-                      app_settings: Settings = Depends(get_settings)):
+                      app_settings: Settings = Depends(get_settings),
+                      current_user=Depends(get_current_user)):
         
     
     project_model = await ProjectModel.create_instance(
@@ -31,7 +33,8 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
     )
 
     project = await project_model.get_project_or_create_one(
-        project_id=project_id
+        project_id=project_id,
+        user_id=current_user.id
     )
 
     # validate the file properties
@@ -77,10 +80,11 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
         asset_project_id=project.id,
         asset_type=AssetTypeEnum.FILE.value,
         asset_name=file_id,
-        asset_size=os.path.getsize(file_path)
+        asset_size=os.path.getsize(file_path),
+        user_id=current_user.id
     )
 
-    asset_record = await asset_model.create_asset(asset=asset_resource)
+    asset_record = await asset_model.create_asset(asset=asset_resource, user_id=current_user.id)
 
     return JSONResponse(
             content={
@@ -91,7 +95,9 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
         )
 
 @data_router.post("/process/{project_id}")
-async def process_endpoint(request: Request, project_id: str, process_request: ProcessRequest):
+async def process_endpoint(request: Request, project_id: str,
+                           process_request: ProcessRequest,
+                           current_user=Depends(get_current_user)):
 
     chunk_size = process_request.chunk_size
     overlap_size = process_request.overlap_size
@@ -102,7 +108,8 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
     )
 
     project = await project_model.get_project_or_create_one(
-        project_id=project_id
+        project_id=project_id,
+        user_id=current_user.id
     )
 
     asset_model = await AssetModel.create_instance(
@@ -113,7 +120,8 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
     if process_request.file_id:
         asset_record = await asset_model.get_asset_record(
             asset_project_id=project.id,
-            asset_name=process_request.file_id
+            asset_name=process_request.file_id,
+            user_id=current_user.id
         )
 
         if asset_record is None:
@@ -134,6 +142,7 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
         project_files = await asset_model.get_all_project_assets(
             asset_project_id=project.id,
             asset_type=AssetTypeEnum.FILE.value,
+            user_id=current_user.id
         )
 
         project_files_ids = {
@@ -160,7 +169,8 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
 
     if do_reset == 1:
         _ = await chunk_model.delete_chunks_by_project_id(
-            project_id=project.id
+            project_id=project.id,
+            user_id=current_user.id
         )
 
     for asset_id, file_id in project_files_ids.items():
@@ -199,7 +209,10 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
             for i, chunk in enumerate(file_chunks)
         ]
 
-        no_records += await chunk_model.insert_many_chunks(chunks=file_chunks_records)
+        no_records += await chunk_model.insert_many_chunks(
+            chunks=file_chunks_records,
+            user_id=current_user.id
+        )
         no_files += 1
 
     return JSONResponse(

@@ -10,6 +10,7 @@ from models.enums.AssetTypeEnum import AssetTypeEnum
 from models.enums.ProcessingEnum import ProcessingEnum
 from models import ResponseSignal
 from routes.schemes.nlpScheme import SearchRequest
+from routes.auth import get_current_user
 
 import os
 import aiofiles
@@ -28,6 +29,7 @@ async def upload_and_index(
     request: Request,
     file: UploadFile,
     app_settings: Settings = Depends(get_settings),
+    current_user=Depends(get_current_user)
 ):
     logger.info("Starting file upload and indexing process.")
 
@@ -38,7 +40,10 @@ async def upload_and_index(
     # --- Project setup
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
     logger.info("ProjectModel instance created.")
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_or_create_one(
+        project_id=project_id,
+        user_id=current_user.id
+    )
     logger.info(f"Project retrieved or created: {project.id}")
 
     # --- Validate and save file
@@ -67,8 +72,9 @@ async def upload_and_index(
         asset_project_id=project.id,
         asset_type=AssetTypeEnum.FILE.value,
         asset_name=file_id,
-        asset_size=os.path.getsize(file_path)
-    ))
+        asset_size=os.path.getsize(file_path),
+        user_id=current_user.id
+    ), user_id=current_user.id)
     logger.info(f"Asset record created: {asset_record.id}")
 
     # --- Process file into chunks
@@ -95,13 +101,14 @@ async def upload_and_index(
             chunk_order=i+1,
             chunk_project_id=project.id,
             chunk_asset_id=asset_record.id,
-            file_type=file_type_enum.value
+            file_type=file_type_enum.value,
+            user_id=current_user.id
         )
         for i, chunk in enumerate(chunks)
     ]
     logger.info(f"Prepared {len(chunk_records)} chunk records for insertion.")
 
-    await chunk_model.insert_many_chunks(chunks=chunk_records)
+    await chunk_model.insert_many_chunks(chunks=chunk_records, user_id=current_user.id)  # <-- ENFORCE OWNERSHIP
     logger.info("Chunks inserted into database.")
 
     # --- Index to vector DB
@@ -135,12 +142,15 @@ async def upload_and_index(
 
 
 @rag_router.post("/ask/{project_id}")
-async def ask_question(request: Request, project_id: str, search_request: SearchRequest):
+async def ask_question(request: Request, project_id: str, search_request: SearchRequest, current_user=Depends(get_current_user)):
     logger.info(f"Received question for project_id: {project_id}")
 
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
     logger.info("ProjectModel instance created.")
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_or_create_one(
+        project_id=project_id,
+        user_id=current_user.id
+    )
     logger.info(f"Project retrieved or created: {project.id}")
 
     nlp_controller = NLPController(

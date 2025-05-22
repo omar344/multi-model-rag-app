@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     MONGODB_URL: str
     MONGODB_DATABASE: str
     
+    SECRET_KEY: str
+    
     GENERATION_BACKEND: str
     EMBEDDING_BACKEND: str
     

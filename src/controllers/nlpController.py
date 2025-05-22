@@ -16,15 +16,15 @@ class NLPController(BaseController):
         self.embedding_client = embedding_client
         self.template_parser = template_parser
 
-    def create_collection_name(self, project_id: str):
-        return f"collection_{project_id}".strip()
+    def create_collection_name(self, project_id: str, user_id: str):
+        return f"collection_{user_id}_{project_id}".strip()
     
     def reset_vector_db_collection(self, project: Project):
-        collection_name = self.create_collection_name(project_id=project.project_id)
+        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
         return self.vectordb_client.delete_collection(collection_name=collection_name)
     
     def get_vector_db_collection_info(self, project: Project):
-        collection_name = self.create_collection_name(project_id=project.project_id)
+        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
         collection_info = self.vectordb_client.get_collection_info(collection_name=collection_name)
 
         return json.loads(
@@ -39,7 +39,7 @@ class NLPController(BaseController):
             logger.warning("No chunks to embed for this batch.")
             return 0
 
-        collection_name = self.create_collection_name(project_id=project.project_id)
+        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
         logger.info(f"Indexing into vector DB collection: {collection_name}")
 
         texts = []
@@ -98,7 +98,7 @@ class NLPController(BaseController):
         logger.info(f"Searching vector DB for project {project.project_id} with query: {text}")
 
         # step1: get collection name
-        collection_name = self.create_collection_name(project_id=project.project_id)
+        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
         logger.debug(f"Using collection: {collection_name}")
 
         # step2: get text embedding vector

@@ -30,7 +30,8 @@ class ChunkModel(BaseDataModel):
                     unique=index["unique"]
                 )
 
-    async def create_chunk(self, chunk: DataChunk):
+    async def create_chunk(self, chunk: DataChunk, user_id):
+        chunk.user_id = user_id
         try:
             result = await self.collection.insert_one(chunk.dict())
             chunk._id = result.inserted_id
@@ -39,10 +40,11 @@ class ChunkModel(BaseDataModel):
             logging.error(f"Error inserting chunk: {e}")
             raise
 
-    async def get_chunk(self, chunk_id: str):
+    async def get_chunk(self, chunk_id: str, user_id):
         try:
             result = await self.collection.find_one({
-                "_id": ObjectId(chunk_id)
+                "_id": ObjectId(chunk_id),
+                "user_id": user_id
             })
             if result is None:
                 return None
@@ -51,7 +53,9 @@ class ChunkModel(BaseDataModel):
             logging.error(f"Error retrieving chunk with ID {chunk_id}: {e}")
             raise
 
-    async def insert_many_chunks(self, chunks: list, batch_size: int = 100):
+    async def insert_many_chunks(self, chunks: list, user_id, batch_size: int = 100):
+        for chunk in chunks:
+            chunk.user_id = user_id
         try:
             for i in range(0, len(chunks), batch_size):
                 batch = chunks[i:i + batch_size]
@@ -65,10 +69,11 @@ class ChunkModel(BaseDataModel):
             logging.error(f"Error inserting chunks: {e}")
             raise
 
-    async def delete_chunks_by_project_id(self, project_id: ObjectId):
+    async def delete_chunks_by_project_id(self, project_id: ObjectId, user_id):
         try:
             result = await self.collection.delete_many({
-                "chunk_project_id": project_id
+                "chunk_project_id": project_id,
+                "user_id": user_id
             })
             logging.info(f"Deleted {result.deleted_count} chunks for project ID {project_id}")
             return result.deleted_count
@@ -76,10 +81,11 @@ class ChunkModel(BaseDataModel):
             logging.error(f"Error deleting chunks for project ID {project_id}: {e}")
             raise
 
-    async def get_project_chunks(self, project_id: ObjectId, page_no: int = 1, page_size: int = 50):
+    async def get_project_chunks(self, project_id: ObjectId, user_id, page_no: int = 1, page_size: int = 50):
         try:
             records = await self.collection.find({
-                "chunk_project_id": project_id
+                "chunk_project_id": project_id,
+                "user_id": user_id
             }).skip(
                 (page_no - 1) * page_size
             ).limit(page_size).to_list(length=None)

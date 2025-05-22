@@ -10,7 +10,7 @@ class DataChunk(BaseModel):
     chunk_image: Optional[str] = Field(None, min_length=1)  
     chunk_table: Optional[Dict] = None  
     chunk_metadata: Dict  
-    
+    user_id: ObjectId
     chunk_order: int = Field(..., gt=0)  
     chunk_project_id: ObjectId
     file_type: str = Field(..., min_length=1)
@@ -24,9 +24,10 @@ class DataChunk(BaseModel):
         return [
             {
                 "key": [
-                    ("chunk_project_id", 1)
+                    ("chunk_project_id", 1),
+                    ("user_id", 1)  # <-- Add user_id to index
                 ],
-                "name": "chunk_project_id_index_1",
+                "name": "chunk_project_id_user_id_index_1",
                 "unique": False
             }
         ]

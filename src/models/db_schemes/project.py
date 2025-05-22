@@ -5,12 +5,12 @@ from bson.objectid import ObjectId
 class Project(BaseModel):
     id: Optional[ObjectId] = Field(None, alias="_id")
     project_id: str = Field(..., min_length=1)
+    user_id: ObjectId
 
     @validator('project_id')
     def validate_project_id(cls, value):
         if not value.isalnum():
             raise ValueError('project_id must be alphanumeric')
-        
         return value
 
     model_config = {
@@ -19,13 +19,13 @@ class Project(BaseModel):
 
     @classmethod
     def get_indexes(cls):
-
         return [
             {
                 "key": [
-                    ("project_id", 1)
+                    ("project_id", 1),
+                    ("user_id", 1)
                 ],
-                "name": "project_id_index_1",
+                "name": "project_id_user_id_index_1",
                 "unique": True
             }
         ]
