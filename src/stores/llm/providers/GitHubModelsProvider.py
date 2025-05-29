@@ -88,9 +88,12 @@ class GitHubModelsProvider(LLMInterface):
             )
             self.logger.info("Embedding request completed.")
             self.logger.info("Received response from GitHub Models API.")
-            # Return the embedding for the first input (for single input)
+            # Return all embeddings if batch, or single if only one input
             if response.data and len(response.data) > 0:
-                return response.data[0].embedding
+                if len(inputs) == 1:
+                    return response.data[0].embedding
+                else:
+                    return [d.embedding for d in response.data]
             else:
                 self.logger.error("No embedding returned from GitHub Models API.")
                 return None
