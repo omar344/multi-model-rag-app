@@ -42,35 +42,73 @@ class NLPController(BaseController):
         collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
         logger.info(f"Indexing into vector DB collection: {collection_name}")
 
+        # --- Batch preparation ---
         texts = []
         metadata = []
-        vectors = []
         valid_ids = []
+        doc_types = []
 
         for i, c in enumerate(chunks):
             chunk_type = c.chunk_metadata.get("type")
-            logger.debug(f"Processing chunk {i} of type {chunk_type}")
+            doc_types.append(chunk_type)
             if chunk_type == "image" and c.chunk_text:
-                logger.info(f"Embedding image chunk at index {i}")
-                vector = self.embedding_client.embed_text(
-                    text=c.chunk_text, document_type=DocumentTypeEnum.IMAGE.value
-                )
-                text_val = c.chunk_text
+                # Ensure image is a data URL
+                image_b64 = c.chunk_text
+                if not image_b64.startswith("data:"):
+                    image_b64 = f"data:image/png;base64,{image_b64}"
+                texts.append(image_b64)
             else:
-                logger.info(f"Embedding text chunk at index {i}")
-                vector = self.embedding_client.embed_text(
-                    text=c.chunk_text, document_type=DocumentTypeEnum.DOCUMENT.value
-                )
-                text_val = c.chunk_text
+                texts.append(c.chunk_text)
+            metadata.append(c.chunk_metadata)
+            valid_ids.append(chunks_ids[i])
 
-            if vector is not None and len(vector) == self.embedding_client.embedding_size:
-                vectors.append(vector)
-                texts.append(text_val)
-                metadata.append(c.chunk_metadata)
-                valid_ids.append(chunks_ids[i])
-                logger.debug(f"Chunk {i} embedded and added to batch.")
+        # --- Batch embedding with chunking ---
+        MAX_BATCH = 96
+
+        def batch_indices(indices, batch_size):
+            for i in range(0, len(indices), batch_size):
+                yield indices[i:i+batch_size]
+
+        image_indices = [i for i, t in enumerate(doc_types) if t == "image" and texts[i]]
+        text_indices = [i for i, t in enumerate(doc_types) if t != "image"]
+
+        vectors = [None] * len(texts)
+
+        # Batch embed images
+        for batch in batch_indices(image_indices, MAX_BATCH):
+            image_inputs = [texts[i] for i in batch]
+            if image_inputs:
+                image_vectors = self.embedding_client.embed_text(image_inputs, document_type="image")
+                if image_vectors is None:
+                    logger.error("Image embedding failed.")
+                    image_vectors = [None] * len(image_inputs)
+                for idx, vec in zip(batch, image_vectors):
+                    vectors[idx] = vec
+
+        # Batch embed texts
+        for batch in batch_indices(text_indices, MAX_BATCH):
+            text_inputs = [texts[i] for i in batch]
+            if text_inputs:
+                text_vectors = self.embedding_client.embed_text(text_inputs, document_type="document")
+                if text_vectors is None:
+                    logger.error("Text embedding failed.")
+                    text_vectors = [None] * len(text_inputs)
+                for idx, vec in zip(batch, text_vectors):
+                    vectors[idx] = vec
+
+        # Filter out any failed embeddings
+        final_texts = []
+        final_metadata = []
+        final_vectors = []
+        final_ids = []
+        for i, vec in enumerate(vectors):
+            if vec is not None and len(vec) == self.embedding_client.embedding_size:
+                final_texts.append(texts[i])
+                final_metadata.append(metadata[i])
+                final_vectors.append(vec)
+                final_ids.append(valid_ids[i])
             else:
-                logger.warning(f"Skipping vector at index {i}: None or wrong size ({None if vector is None else len(vector)})")
+                logger.warning(f"Skipping chunk at index {i}: embedding failed or wrong size.")
 
         logger.info(f"Creating collection '{collection_name}' with embedding size {self.embedding_client.embedding_size}")
         _ = self.vectordb_client.create_collection(
@@ -79,16 +117,16 @@ class NLPController(BaseController):
             do_reset=do_reset,
         )
 
-        logger.info(f"Inserting {len(vectors)} vectors into collection '{collection_name}'")
+        logger.info(f"Inserting {len(final_vectors)} vectors into collection '{collection_name}'")
         inserted = self.vectordb_client.insert_many(
             collection_name=collection_name,
-            texts=texts,
-            metadata=metadata,
-            vectors=vectors,
-            record_ids=valid_ids,
+            texts=final_texts,
+            metadata=final_metadata,
+            vectors=final_vectors,
+            record_ids=final_ids,
         )
 
-        inserted_count = len(vectors) if inserted else 0
+        inserted_count = len(final_vectors) if inserted else 0
         logger.info(f"Inserted {inserted_count} vectors into collection '{collection_name}'.")
 
         return True
@@ -147,6 +185,7 @@ class NLPController(BaseController):
 
         for idx, doc in enumerate(retrieved_documents):
             doc_type = doc.metadata.get("type", "text")
+            page_number = doc.metadata.get("page_number")
             if doc_type == "image":
                 logger.info(f"Adding image document {idx} to prompt.")
                 image_b64 = doc.text
@@ -165,6 +204,7 @@ class NLPController(BaseController):
                     "text": self.template_parser.get("rag", "document_prompt", {
                         "doc_num": idx + 1,
                         "chunk_text": doc.text,
+                        "page_number": page_number if page_number is not None else "N/A"
                     })
                 })
 
