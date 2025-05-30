@@ -2,8 +2,12 @@ import logging
 from .BaseController import BaseController
 from models.db_schemes import Project, DataChunk
 from stores.llm.LLMEnums import DocumentTypeEnum
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 import json
 from typing import List
+from PIL import Image
+import io
+import base64
 
 class NLPController(BaseController):
     
@@ -15,6 +19,23 @@ class NLPController(BaseController):
         self.generation_client = generation_client
         self.embedding_client = embedding_client
         self.template_parser = template_parser
+
+    def resize_and_compress_image_b64(self, image_b64, max_size=(512, 512), quality=70):
+        """Resize and compress a base64 image string to reduce token size."""
+        try:
+            # Remove data URL prefix if present
+            if image_b64.startswith("data:"):
+                header, image_b64 = image_b64.split(",", 1)
+            image_data = base64.b64decode(image_b64)
+            image = Image.open(io.BytesIO(image_data)).convert("RGB")
+            image.thumbnail(max_size, Image.LANCZOS)
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=quality, optimize=True)
+            resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            return f"data:image/jpeg;base64,{resized_b64}"
+        except Exception as e:
+            logging.getLogger("uvicorn.error").error(f"Failed to resize/compress image: {e}")
+            return image_b64  # fallback to original
 
     def create_collection_name(self, project_id: str, user_id: str):
         return f"collection_{user_id}_{project_id}".strip()
@@ -52,10 +73,9 @@ class NLPController(BaseController):
             chunk_type = c.chunk_metadata.get("type")
             doc_types.append(chunk_type)
             if chunk_type == "image" and c.chunk_text:
-                # Ensure image is a data URL
+                # Resize/compress image before embedding
                 image_b64 = c.chunk_text
-                if not image_b64.startswith("data:"):
-                    image_b64 = f"data:image/png;base64,{image_b64}"
+                image_b64 = self.resize_and_compress_image_b64(image_b64)
                 texts.append(image_b64)
             else:
                 texts.append(c.chunk_text)
@@ -102,13 +122,13 @@ class NLPController(BaseController):
         final_vectors = []
         final_ids = []
         for i, vec in enumerate(vectors):
-            if vec is not None and len(vec) == self.embedding_client.embedding_size:
+            if isinstance(vec, (list, tuple)) and len(vec) == self.embedding_client.embedding_size:
                 final_texts.append(texts[i])
                 final_metadata.append(metadata[i])
                 final_vectors.append(vec)
                 final_ids.append(valid_ids[i])
             else:
-                logger.warning(f"Skipping chunk at index {i}: embedding failed or wrong size.")
+                logger.warning(f"Skipping chunk at index {i}: embedding is not a list or wrong size. Got type: {type(vec)}, value: {vec}")
 
         logger.info(f"Creating collection '{collection_name}' with embedding size {self.embedding_client.embedding_size}")
         _ = self.vectordb_client.create_collection(
@@ -131,36 +151,73 @@ class NLPController(BaseController):
 
         return True
 
-    def search_vector_db_collection(self, project: Project, text: str, limit: int = 10):
+    def search_vector_db_collection(self, project: Project, text: str, limit: int = 10, image_limit: int = 3):
         logger = logging.getLogger("uvicorn.error")
         logger.info(f"Searching vector DB for project {project.project_id} with query: {text}")
 
-        # step1: get collection name
         collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
-        logger.debug(f"Using collection: {collection_name}")
-
-        # step2: get text embedding vector
-        vector = self.embedding_client.embed_text(text=text, 
-                                                 document_type=DocumentTypeEnum.QUERY.value)
-        logger.debug(f"Query embedding vector generated.")
+        vector = self.embedding_client.embed_text(text=text, document_type=DocumentTypeEnum.QUERY.value)
 
         if not vector or len(vector) == 0:
             logger.warning("No embedding vector generated for query.")
             return False
 
-        # step3: do semantic search
-        results = self.vectordb_client.search_by_vector(
+        # --- Text chunks ---
+        text_filter = Filter(
+            must=[
+                FieldCondition(
+                    key="metadata.type",
+                    match=MatchValue(value="text")
+                )
+            ]
+        )
+        text_results = self.vectordb_client.client.search(
             collection_name=collection_name,
-            vector=vector,
-            limit=limit
+            query_vector=vector,
+            limit=limit,
+            query_filter=text_filter
         )
 
-        if not results:
-            logger.warning("No results found in vector DB search.")
-            return False
+        # --- Image chunks ---
+        image_filter = Filter(
+            must=[
+                FieldCondition(
+                    key="metadata.type",
+                    match=MatchValue(value="image")
+                )
+            ]
+        )
+        image_results = self.vectordb_client.client.search(
+            collection_name=collection_name,
+            query_vector=vector,
+            limit=image_limit,
+            query_filter=image_filter
+        )
 
-        logger.info(f"Found {len(results)} results in vector DB search.")
-        return results
+        # Convert to RetrievedDocument
+        from models.db_schemes import RetrievedDocument
+        def to_docs(results):
+            return [
+                RetrievedDocument(
+                    score=result.score,
+                    text=result.payload["text"],
+                    metadata=result.payload.get("metadata", {})
+                )
+                for result in results
+            ] if results else []
+
+        text_docs = to_docs(text_results)
+        image_docs = to_docs(image_results)
+
+        # --- Boost image scores if query is image-related ---
+        if self.is_image_query(text):
+            boost_factor = 1.2  # You can tune this
+            for doc in image_docs:
+                doc.score *= boost_factor
+
+        combined = text_docs + image_docs
+        combined.sort(key=lambda d: d.score, reverse=True)
+        return combined
     
     def answer_rag_question(self, project: Project, query: str, limit: int = 10):
         logger = logging.getLogger("uvicorn.error")
@@ -234,3 +291,12 @@ class NLPController(BaseController):
             logger.warning("No answer received from generation client.")
 
         return answer, message_parts, chat_history
+
+    def is_image_query(self, query: str) -> bool:
+        image_keywords = [
+            "image", "figure", "diagram", "chart", "picture", "photo", "see", "show",
+            "illustration", "graph", "table", "visual", "plot", "map", "screenshot",
+            "scan", "drawing", "sketch", "look like"
+        ]
+        query_lower = query.lower()
+        return any(kw in query_lower for kw in image_keywords)
