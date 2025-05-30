@@ -48,7 +48,7 @@ class ProcessController(BaseController):
             if hasattr(metadata, k)
         }
 
-    def classify_element(self, el):
+    def classify_element(self, el, elements=None, idx=None):
         meta = self.extract_essential_metadata(el.metadata)
 
         if isinstance(el, Table):
@@ -62,11 +62,23 @@ class ProcessController(BaseController):
                 metadata={**meta, "type": "text"},
             )
         elif isinstance(el, Image):
+            # Try to find a caption or nearby text
+            caption = None
+            if elements is not None and idx is not None:
+                # Look before and after for NarrativeText
+                for offset in [-1, 1]:
+                    neighbor_idx = idx + offset
+                    if 0 <= neighbor_idx < len(elements):
+                        neighbor = elements[neighbor_idx]
+                        if isinstance(neighbor, NarrativeText):
+                            caption = neighbor.text
+                            break
             return Document(
                 page_content=getattr(el.metadata, "image_base64", None),
                 metadata={
                     **meta,
-                    "type": "image"
+                    "type": "image",
+                    "caption": caption
                 },
             )
         return None
@@ -74,18 +86,18 @@ class ProcessController(BaseController):
     def flatten_elements(self, elements):
         docs = []
         seen_ids = set()
-        for el in elements:
+        for idx, el in enumerate(elements):
             # Use id(el) to uniquely identify each element object
             if isinstance(el, CompositeElement) and hasattr(el.metadata, "orig_elements"):
                 for sub in el.metadata.orig_elements:
                     if id(sub) not in seen_ids:
-                        doc = self.classify_element(sub)
+                        doc = self.classify_element(sub, elements=elements, idx=idx)
                         if doc:
                             docs.append(doc)
                         seen_ids.add(id(sub))
             else:
                 if id(el) not in seen_ids:
-                    doc = self.classify_element(el)
+                    doc = self.classify_element(el, elements=elements, idx=idx)
                     if doc:
                         docs.append(doc)
                     seen_ids.add(id(el))

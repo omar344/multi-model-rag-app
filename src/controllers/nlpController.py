@@ -73,10 +73,14 @@ class NLPController(BaseController):
             chunk_type = c.chunk_metadata.get("type")
             doc_types.append(chunk_type)
             if chunk_type == "image" and c.chunk_text:
-                # Resize/compress image before embedding
                 image_b64 = c.chunk_text
                 image_b64 = self.resize_and_compress_image_b64(image_b64)
-                texts.append(image_b64)
+                # Combine image and caption for embedding if caption exists
+                caption = c.chunk_metadata.get("caption")
+                if caption:
+                    texts.append({"image": image_b64, "caption": caption})
+                else:
+                    texts.append(image_b64)
             else:
                 texts.append(c.chunk_text)
             metadata.append(c.chunk_metadata)
@@ -209,9 +213,12 @@ class NLPController(BaseController):
         text_docs = to_docs(text_results)
         image_docs = to_docs(image_results)
 
+        # --- Rerank images using captions ---
+        image_docs = self.rerank_images_with_captions(text, image_docs)
+
         # --- Boost image scores if query is image-related ---
         if self.is_image_query(text):
-            boost_factor = 1.2  # You can tune this
+            boost_factor = 1.2 
             for doc in image_docs:
                 doc.score *= boost_factor
 
@@ -246,13 +253,18 @@ class NLPController(BaseController):
             if doc_type == "image":
                 logger.info(f"Adding image document {idx} to prompt.")
                 image_b64 = doc.text
-                # If not already a data URL, wrap it
+                caption = doc.metadata.get("caption")
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/png;base64,{image_b64}"
                 message_parts.append({
                     "type": "image_url",
                     "image_url": {"url": image_b64}
                 })
+                if caption:
+                    message_parts.append({
+                        "type": "text",
+                        "text": f"Image caption/context: {caption}"
+                    })
             else:
                 logger.info(f"Adding text document {idx} to prompt.")
                 # Add text document
@@ -300,3 +312,30 @@ class NLPController(BaseController):
         ]
         query_lower = query.lower()
         return any(kw in query_lower for kw in image_keywords)
+
+    def rerank_images_with_captions(self, query, image_docs):
+        """
+        Rerank image_docs by combining their original vector score and the semantic similarity
+        between the query and the image's caption (if available).
+        """
+        # Embed the query
+        query_vec = self.embedding_client.embed_text(query, document_type="query")
+        reranked = []
+        for doc in image_docs:
+            caption = doc.metadata.get("caption", "")
+            if caption:
+                caption_vec = self.embedding_client.embed_text(caption, document_type="document")
+                # Compute cosine similarity between query and caption
+                import numpy as np
+                def cosine_similarity(a, b):
+                    a = np.array(a)
+                    b = np.array(b)
+                    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+                sim = cosine_similarity(query_vec, caption_vec)
+                # Combine with image score (tune weights as needed)
+                combined_score = 0.7 * doc.score + 0.3 * sim
+            else:
+                combined_score = doc.score
+            reranked.append((doc, combined_score))
+        reranked.sort(key=lambda x: x[1], reverse=True)
+        return [doc for doc, _ in reranked]
