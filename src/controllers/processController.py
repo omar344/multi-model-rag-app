@@ -108,7 +108,7 @@ class ProcessController(BaseController):
             filename=path,
             infer_table_structure=True,
             strategy="hi_res",
-            extract_image_block_types=["Image"],
+            extract_image_block_types=["Image", "Table"],
             extract_image_block_to_payload=True,
             include_metadata=True,
             chunking_strategy="by_title",

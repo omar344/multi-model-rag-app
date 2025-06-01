@@ -28,3 +28,4 @@ voyageai==0.3.2
 passlib
 python-jose[cryptography]
 email-validator
+FlagEmbedding

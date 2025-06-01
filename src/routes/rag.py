@@ -179,3 +179,32 @@ async def ask_question(request: Request, project_id: str, search_request: Search
         "full_prompt": full_prompt,
         "chat_history": chat_history
     })
+
+
+@rag_router.get("/list_projects")
+async def list_projects(request: Request, current_user=Depends(get_current_user)):
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+
+    # Get all projects for the user
+    projects, _ = await project_model.get_all_projects(user_id=current_user.id, page=1, page_size=1000)
+    results = []
+
+    for project in projects:
+        # Get the first file asset for the project (if any)
+        assets = await asset_model.get_all_project_assets(
+            asset_project_id=project.id,
+            asset_type="file",
+            user_id=current_user.id
+        )
+        if assets and assets[0].asset_name:
+            # Remove the random string prefix (12 chars + underscore)
+            orig_file_name = assets[0].asset_name[13:] if len(assets[0].asset_name) > 13 else assets[0].asset_name
+        else:
+            orig_file_name = None
+        results.append({
+            "project_id": project.project_id,
+            "file_name": orig_file_name
+        })
+
+    return JSONResponse(content=results)
