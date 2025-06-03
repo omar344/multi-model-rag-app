@@ -52,10 +52,29 @@ class ProcessController(BaseController):
         meta = self.extract_essential_metadata(el.metadata)
 
         if isinstance(el, Table):
-            return Document(
-                page_content=str(el),
-                metadata={**meta, "type": "table"},
-            )
+            # If the table has a screenshot (image_base64), treat as image
+            image_b64 = getattr(el.metadata, "image_base64", None)
+            if image_b64:
+                # Try to find a caption or nearby text
+                caption = None
+                if elements is not None and idx is not None:
+                    for offset in [-1, 1]:
+                        neighbor_idx = idx + offset
+                        if 0 <= neighbor_idx < len(elements):
+                            neighbor = elements[neighbor_idx]
+                            if isinstance(neighbor, NarrativeText):
+                                caption = neighbor.text
+                                break
+                return Document(
+                    page_content=image_b64,
+                    metadata={**meta, "type": "image", "caption": caption, "is_table_image": True},
+                )
+            else:
+                # Fallback: treat as text if no image
+                return Document(
+                    page_content=str(el),
+                    metadata={**meta, "type": "table"},
+                )
         elif isinstance(el, NarrativeText):
             return Document(
                 page_content=el.text,
@@ -65,7 +84,6 @@ class ProcessController(BaseController):
             # Try to find a caption or nearby text
             caption = None
             if elements is not None and idx is not None:
-                # Look before and after for NarrativeText
                 for offset in [-1, 1]:
                     neighbor_idx = idx + offset
                     if 0 <= neighbor_idx < len(elements):
@@ -75,11 +93,7 @@ class ProcessController(BaseController):
                             break
             return Document(
                 page_content=getattr(el.metadata, "image_base64", None),
-                metadata={
-                    **meta,
-                    "type": "image",
-                    "caption": caption
-                },
+                metadata={**meta, "type": "image", "caption": caption, "is_table_image": False},
             )
         return None
 

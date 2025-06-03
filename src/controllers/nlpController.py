@@ -9,6 +9,7 @@ from PIL import Image
 import io
 import base64
 import numpy as np
+import re
 
 
 class NLPController(BaseController):
@@ -77,9 +78,10 @@ class NLPController(BaseController):
         doc_types = []
 
         for i, c in enumerate(chunks):
+            # Treat table images as images
             chunk_type = c.chunk_metadata.get("type")
-            doc_types.append(chunk_type)
-            if chunk_type == "image" and c.chunk_text:
+            is_table_image = c.chunk_metadata.get("is_table_image", False)
+            if (chunk_type == "image" and c.chunk_text) or is_table_image:
                 image_b64 = c.chunk_text
                 image_b64_resized = self.resize_and_compress_image_b64(image_b64)
                 if image_b64_resized is not None:
@@ -88,12 +90,11 @@ class NLPController(BaseController):
                     logger.warning(f"Skipping image chunk at index {i} due to resize failure.")
                     continue
                 caption = c.chunk_metadata.get("caption")
-                if caption:
-                    texts.append({"image": image_b64, "caption": caption})
-                else:
-                    texts.append(image_b64)
+                texts.append(image_b64)
+                doc_types.append("image")
             else:
                 texts.append(c.chunk_text)
+                doc_types.append(chunk_type)
             metadata.append(c.chunk_metadata)
             valid_ids.append(chunks_ids[i])
 
@@ -165,6 +166,13 @@ class NLPController(BaseController):
 
         return True
 
+    def extract_page_number(self, query: str):
+        # Simple regex to find "page 5" or "on page 12"
+        match = re.search(r'page\s*(\d+)', query, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return None
+
     def search_vector_db_collection(self, project: Project, text: str, limit: int = 20, image_limit: int = 20):
         logger = logging.getLogger("uvicorn.error")
         logger.info(f"Searching vector DB for project {project.project_id} with query: {text}")
@@ -232,6 +240,15 @@ class NLPController(BaseController):
             for doc in image_docs:
                 doc.score *= boost_factor
 
+        # --- Boost by page number if specified ---
+        page_number = self.extract_page_number(text)
+        if page_number is not None:
+            boost_factor = 1.5  # You can tune this
+            for doc in text_docs + image_docs:
+                doc_page = doc.metadata.get("page_number")
+                if doc_page is not None and str(doc_page) == str(page_number):
+                    doc.score *= boost_factor
+
         # --- Combine and rerank all docs with FlagEmbedding ---
         combined = text_docs + image_docs
         if combined:
@@ -264,8 +281,9 @@ class NLPController(BaseController):
 
         for idx, doc in enumerate(retrieved_documents[:10]):  # Only send top 10 to LLM
             doc_type = doc.metadata.get("type", "text")
+            is_table_image = doc.metadata.get("is_table_image", False)
             page_number = doc.metadata.get("page_number")
-            if doc_type == "image":
+            if doc_type == "image" or is_table_image:
                 logger.info(f"Adding image document {idx} to prompt.")
                 image_b64 = doc.text
                 caption = doc.metadata.get("caption")
@@ -275,14 +293,20 @@ class NLPController(BaseController):
                     "type": "image_url",
                     "image_url": {"url": image_b64}
                 })
+                # Add page number and caption/context
+                page_info = f"(Page: {page_number if page_number is not None else 'N/A'})"
                 if caption:
                     message_parts.append({
                         "type": "text",
-                        "text": f"Image caption/context: {caption}"
+                        "text": f"Image {idx+1} {page_info}: {caption}"
+                    })
+                else:
+                    message_parts.append({
+                        "type": "text",
+                        "text": f"Image {idx+1} {page_info}"
                     })
             else:
                 logger.info(f"Adding text document {idx} to prompt.")
-                # Add text document
                 message_parts.append({
                     "type": "text",
                     "text": self.template_parser.get("rag", "document_prompt", {

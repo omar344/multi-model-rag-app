@@ -1,68 +1,92 @@
-# multi-model-rag
+# Multi-Model RAG Application
 
-This is a implementation of the RAG multi model for question answering.
+A FastAPI-based application implementing Retrieval-Augmented Generation (RAG) with multiple model support. This application provides a flexible architecture for document processing, embedding generation, and question answering using various LLM providers and vector databases.
+
+## Features
+
+- Multiple LLM provider support (OpenAI, Groq, Voyage AI)
+- Multiple vector database support
+- Document processing and embedding generation
+- Authentication system
+- RESTful API endpoints for RAG operations
+- MongoDB integration for data persistence
 
 ## Requirements
 
 - Python 3.10 or later
+- MongoDB
+- System dependencies for document processing
 
-#### Install Python using MiniConda
+### System Dependencies
 
-1) Download and install Miniconda from [here](https://www.anaconda.com/docs/getting-started/miniconda/install#quickstart-install-instructions)
-2) create a new environment using the following command:
+For Ubuntu/Debian:
 ```bash
-conda create -n multi-model-rag-app python=3.10
-```
-3) Activate the environment:
-```bash
- conda activate multi-model-rag-app
+sudo apt-get update
+sudo apt-get install -y poppler-utils tesseract-ocr libmagic-dev
 ```
 
-### (Optional) Setup your command line interface for better readability
-```bash
-export PS1="\[\033[01;32m\]\u@\h:\w\n\[\033[00m\]\$ "
-```
+For Windows:
+1. Install [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
+2. Install [Poppler for Windows](http://blog.alivate.com.au/poppler-windows/)
+3. Add both to your system PATH
 
-## Installation 
+## Installation
 
-### Install the required pakages
+1. **Set up Python Environment**
+
+   Using Miniconda (recommended):
+   ```bash
+   # Install Miniconda from https://docs.conda.io/en/latest/miniconda.html
+   
+   # Create and activate environment
+   conda create -n multi-model-rag-app python=3.10
+   conda activate multi-model-rag-app
+   ```
+
+2. **Install PyTorch (CPU version)**
+   ```bash
+   pip install torch==2.2.0+cpu --index-url https://download.pytorch.org/whl/cpu
+   pip install torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
+   ```
+
+3. **Install Project Dependencies**
+   ```bash
+   cd src
+   pip install -r requirements.txt
+   ```
+
+4. **Configure Environment Variables**
+   ```bash
+   # Copy example environment file
+   cp .env.example .env
+   ```
+   
+   Edit `.env` file and set the following required variables:
+   - `MONGODB_URL`: Your MongoDB connection string
+   - `GENERATION_BACKEND`: Your chosen LLM provider (e.g., "openai", "groq", "voyage")
+   - `GENERATION_MODEL_ID`: Model ID for text generation
+   - `EMBEDDING_BACKEND`: Provider for embeddings
+   - `EMBEDDING_MODEL_ID`: Model ID for embeddings
+   - Required API keys based on your chosen providers
+
+## Running the Application
+
+1. **Start MongoDB**
+   Ensure your MongoDB instance is running and accessible
+
+2. **Start the FastAPI Server**
+   ```bash
+   cd src
+   uvicorn main:app --reload --host 0.0.0.0 --port 5000
+   ```
+   The API will be available at `http://localhost:5000`
+
+## API Documentation
+
+- Swagger UI: `http://localhost:5000/docs`
+- ReDoc: `http://localhost:5000/redoc`
 
 
-To get the CPU version of torch, run this line first
+## License
 
-```bash
-pip install torch==2.2.0+cpu --index-url https://download.pytorch.org/whl/cpu
-pip install torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
-```
-then install the rest of the requirements
-
-```bash
-pip install -r requirements.txt
-```
-system level requirments for unstructured
-```bash
-apt-get install poppler-utils tesseract-ocr libmagic-dev
-```
-
-### Setup the environment variables
-
-```bash
-cp .env.example .env
-```
-
-set your environment variables in the `.env` file. like `OPEN_API_KEY` value.
-## Run Docker Compose Services
-
-```bash
-    cd docker 
-    cd .env.example
-```
-- update `.env` with your credentials
-
-## Run the FastAPI server
-```bash
- uvicorn main:app --reload --host 0.0.0.0 --port 5000
-```
-## Postman Collection
-
-Download the POSTMAN collection from [/assets/multi-model-rag-app.postman_collection.json](/assets\multi-model-rag-app.postman_collection.json)
+This project is licensed under the terms included in the LICENSE file.
