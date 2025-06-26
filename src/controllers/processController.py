@@ -91,8 +91,11 @@ class ProcessController(BaseController):
                         if isinstance(neighbor, NarrativeText):
                             caption = neighbor.text
                             break
+            image_b64 = getattr(el.metadata, "image_base64", None)
+            if image_b64 is None:
+                image_b64 = ""  # Ensure always a string
             return Document(
-                page_content=getattr(el.metadata, "image_base64", None),
+                page_content=image_b64,
                 metadata={**meta, "type": "image", "caption": caption, "is_table_image": False},
             )
         return None
@@ -100,21 +103,61 @@ class ProcessController(BaseController):
     def flatten_elements(self, elements):
         docs = []
         seen_ids = set()
+        max_paragraphs_per_chunk = 4  # Larger chunk size
+        overlap_paragraphs = 2        # More overlap
+        text_chunks = []
+        text_metadatas = []
+        # First, flatten all NarrativeText into paragraph chunks with context
         for idx, el in enumerate(elements):
             # Use id(el) to uniquely identify each element object
             if isinstance(el, CompositeElement) and hasattr(el.metadata, "orig_elements"):
-                for sub in el.metadata.orig_elements:
-                    if id(sub) not in seen_ids:
-                        doc = self.classify_element(sub, elements=elements, idx=idx)
-                        if doc:
-                            docs.append(doc)
-                        seen_ids.add(id(sub))
+                orig_elements = getattr(el.metadata, "orig_elements", None)
+                if orig_elements is not None:
+                    for sub in orig_elements:
+                        if id(sub) not in seen_ids:
+                            if isinstance(sub, NarrativeText):
+                                paragraphs = [p.strip() for p in sub.text.split('\n\n') if p.strip()]
+                                i = 0
+                                while i < len(paragraphs):
+                                    chunk = "\n\n".join(paragraphs[i:i+max_paragraphs_per_chunk])
+                                    meta = self.extract_essential_metadata(sub.metadata)
+                                    meta.update({"type": "text"})
+                                    text_chunks.append(chunk)
+                                    text_metadatas.append(meta)
+                                    i += max_paragraphs_per_chunk - overlap_paragraphs
+                            else:
+                                doc = self.classify_element(sub, elements=elements, idx=idx)
+                                if doc:
+                                    docs.append(doc)
+                            seen_ids.add(id(sub))
             else:
                 if id(el) not in seen_ids:
-                    doc = self.classify_element(el, elements=elements, idx=idx)
-                    if doc:
-                        docs.append(doc)
+                    if isinstance(el, NarrativeText):
+                        paragraphs = [p.strip() for p in el.text.split('\n\n') if p.strip()]
+                        i = 0
+                        while i < len(paragraphs):
+                            chunk = "\n\n".join(paragraphs[i:i+max_paragraphs_per_chunk])
+                            meta = self.extract_essential_metadata(el.metadata)
+                            meta.update({"type": "text"})
+                            text_chunks.append(chunk)
+                            text_metadatas.append(meta)
+                            i += max_paragraphs_per_chunk - overlap_paragraphs
+                    else:
+                        doc = self.classify_element(el, elements=elements, idx=idx)
+                        if doc:
+                            docs.append(doc)
                     seen_ids.add(id(el))
+        # Add context window to each text chunk
+        for i, (chunk, meta) in enumerate(zip(text_chunks, text_metadatas)):
+            prev_context = text_chunks[i-1] if i > 0 else None
+            next_context = text_chunks[i+1] if i < len(text_chunks)-1 else None
+            meta = meta.copy()
+            if prev_context:
+                meta["prev_context"] = prev_context
+            if next_context:
+                meta["next_context"] = next_context
+            # Ensure chunk is always a string
+            docs.append(Document(page_content=chunk if chunk is not None else "", metadata=meta))
         return docs
 
     def process_pdf(self, path: str) -> List[Document]:

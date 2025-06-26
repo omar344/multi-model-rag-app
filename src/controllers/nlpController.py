@@ -34,7 +34,7 @@ class NLPController(BaseController):
             logger.info(f"[ImageResize] Original image base64 size: {before_size / 1024:.2f} KB")
             image_data = base64.b64decode(image_b64)
             image = Image.open(io.BytesIO(image_data)).convert("RGB")
-            image.thumbnail(max_size, Image.LANCZOS)
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
             buffer = io.BytesIO()
             image.save(buffer, format="JPEG", quality=quality, optimize=True)
             resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
@@ -49,11 +49,11 @@ class NLPController(BaseController):
         return f"collection_{user_id}_{project_id}".strip()
     
     def reset_vector_db_collection(self, project: Project):
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         return self.vectordb_client.delete_collection(collection_name=collection_name)
     
     def get_vector_db_collection_info(self, project: Project):
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         collection_info = self.vectordb_client.get_collection_info(collection_name=collection_name)
 
         return json.loads(
@@ -68,7 +68,7 @@ class NLPController(BaseController):
             logger.warning("No chunks to embed for this batch.")
             return 0
 
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         logger.info(f"Indexing into vector DB collection: {collection_name}")
 
         # --- Batch preparation ---
@@ -177,7 +177,7 @@ class NLPController(BaseController):
         logger = logging.getLogger("uvicorn.error")
         logger.info(f"Searching vector DB for project {project.project_id} with query: {text}")
 
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         vector = self.embedding_client.embed_text(text=text, document_type=DocumentTypeEnum.QUERY.value)
 
         if not vector or len(vector) == 0:
@@ -307,11 +307,22 @@ class NLPController(BaseController):
                     })
             else:
                 logger.info(f"Adding text document {idx} to prompt.")
+                # Add prev_context and next_context if available
+                prev_context = doc.metadata.get("prev_context")
+                next_context = doc.metadata.get("next_context")
+                chunk_text = doc.text
+                context_parts = []
+                if prev_context:
+                    context_parts.append(f"[Previous context]\n{prev_context}")
+                context_parts.append(f"[Main chunk]\n{chunk_text}")
+                if next_context:
+                    context_parts.append(f"[Next context]\n{next_context}")
+                full_chunk_text = "\n\n".join(context_parts)
                 message_parts.append({
                     "type": "text",
                     "text": self.template_parser.get("rag", "document_prompt", {
                         "doc_num": idx + 1,
-                        "chunk_text": doc.text,
+                        "chunk_text": full_chunk_text,
                         "page_number": page_number if page_number is not None else "N/A"
                     })
                 })
@@ -384,7 +395,7 @@ class NLPController(BaseController):
         # You may want to cache the reranker instance in production
         reranker = FlagReranker('BAAI/bge-reranker-base', use_fp16=True)
 
-        pairs = [[query, doc.text] for doc in docs]
+        pairs = [(query, doc.text) for doc in docs]
         scores = reranker.compute_score(pairs)
 
         reranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
