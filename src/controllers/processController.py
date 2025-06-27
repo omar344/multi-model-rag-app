@@ -12,6 +12,8 @@ from unstructured.documents.elements import (
     CompositeElement, Table, Image, NarrativeText
 )
 from langchain.schema import Document
+import time
+import chardet
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -27,19 +29,22 @@ class ProcessController(BaseController):
     def get_file_content(self, file_id: str) -> List[Document]:
         file_path = os.path.join(self.project_path, file_id)
         ext = self.get_file_extension(file_id)
-
+        start = time.perf_counter()
         try:
             if ext == ProcessingEnum.PDF.value:
-                return self.process_pdf(file_path)
+                result = self.process_pdf(file_path)
             elif ext in [ProcessingEnum.JPG.value, ProcessingEnum.JPEG.value, ProcessingEnum.PNG.value]:
-                return self.process_image(file_path)
+                result = self.process_image(file_path)
             elif ext == ProcessingEnum.TXT.value:
-                return self.process_text(file_path)
+                result = self.process_text(file_path)
             else:
                 raise ValueError(f"Unsupported file type: {ext}")
         except Exception as e:
             logger.error(f"Error processing file {file_id}: {e}")
             raise ValueError(f"Processing failed: {e}")
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] get_file_content({file_id}) took {end - start:.2f} seconds")
+        return result
 
     def extract_essential_metadata(self, metadata):
         return {
@@ -100,7 +105,28 @@ class ProcessController(BaseController):
             )
         return None
 
+    def fix_arabic_encoding(self, text: str) -> str:
+        """Fix Arabic text encoding issues"""
+        if not text:
+            return text
+        
+        try:
+            # Try to detect encoding
+            detected = chardet.detect(text.encode('latin-1'))
+            if detected and detected['encoding']:
+                # If detected as Windows-1256 (Arabic), convert to UTF-8
+                if detected['encoding'].lower() in ['windows-1256', 'cp1256']:
+                    return text.encode('latin-1').decode('windows-1256')
+                # If detected as ISO-8859-6 (Arabic), convert to UTF-8
+                elif detected['encoding'].lower() in ['iso-8859-6', 'arabic']:
+                    return text.encode('latin-1').decode('iso-8859-6')
+        except Exception as e:
+            logger.warning(f"Failed to fix Arabic encoding: {e}")
+        
+        return text
+
     def flatten_elements(self, elements):
+        start = time.perf_counter()
         docs = []
         seen_ids = set()
         max_paragraphs_per_chunk = 4  # Larger chunk size
@@ -116,7 +142,9 @@ class ProcessController(BaseController):
                     for sub in orig_elements:
                         if id(sub) not in seen_ids:
                             if isinstance(sub, NarrativeText):
-                                paragraphs = [p.strip() for p in sub.text.split('\n\n') if p.strip()]
+                                # Fix Arabic encoding before processing
+                                fixed_text = self.fix_arabic_encoding(sub.text)
+                                paragraphs = [p.strip() for p in fixed_text.split('\n\n') if p.strip()]
                                 i = 0
                                 while i < len(paragraphs):
                                     chunk = "\n\n".join(paragraphs[i:i+max_paragraphs_per_chunk])
@@ -133,7 +161,9 @@ class ProcessController(BaseController):
             else:
                 if id(el) not in seen_ids:
                     if isinstance(el, NarrativeText):
-                        paragraphs = [p.strip() for p in el.text.split('\n\n') if p.strip()]
+                        # Fix Arabic encoding before processing
+                        fixed_text = self.fix_arabic_encoding(el.text)
+                        paragraphs = [p.strip() for p in fixed_text.split('\n\n') if p.strip()]
                         i = 0
                         while i < len(paragraphs):
                             chunk = "\n\n".join(paragraphs[i:i+max_paragraphs_per_chunk])
@@ -158,6 +188,8 @@ class ProcessController(BaseController):
                 meta["next_context"] = next_context
             # Ensure chunk is always a string
             docs.append(Document(page_content=chunk if chunk is not None else "", metadata=meta))
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] flatten_elements() took {end - start:.2f} seconds")
         return docs
 
     def process_pdf(self, path: str) -> List[Document]:
@@ -183,8 +215,11 @@ class ProcessController(BaseController):
         return self.flatten_elements(elements)
 
     def process_file_content(self, file_content: List[Document], file_id: str) -> List[Document]:
+        start = time.perf_counter()
         if not file_content:
             logger.warning(f"No content extracted from file: {file_id}")
+            end = time.perf_counter()
+            logger.info(f"[PROFILE] process_file_content({file_id}) took {end - start:.2f} seconds")
             return []
 
         for doc in file_content:
@@ -199,5 +234,6 @@ class ProcessController(BaseController):
             f"{sum(d.metadata.get('type') == 'table' for d in file_content)} tables, "
             f"{sum(d.metadata.get('type') == 'image' for d in file_content)} images)"
         )
-
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] process_file_content({file_id}) took {end - start:.2f} seconds")
         return file_content

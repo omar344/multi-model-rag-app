@@ -10,6 +10,7 @@ import io
 import base64
 import numpy as np
 import re
+import time
 
 
 class NLPController(BaseController):
@@ -63,9 +64,12 @@ class NLPController(BaseController):
     def index_into_vector_db(self, project: Project, chunks: List[DataChunk],
                                    chunks_ids: List[int], 
                                    do_reset: bool = False):
+        start = time.perf_counter()
         logger = logging.getLogger("uvicorn.error")
         if not chunks:
             logger.warning("No chunks to embed for this batch.")
+            end = time.perf_counter()
+            logger.info(f"[PROFILE] index_into_vector_db() took {end - start:.2f} seconds")
             return 0
 
         collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
@@ -163,7 +167,8 @@ class NLPController(BaseController):
 
         inserted_count = len(final_vectors) if inserted else 0
         logger.info(f"Inserted {inserted_count} vectors into collection '{collection_name}'.")
-
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] index_into_vector_db() took {end - start:.2f} seconds")
         return True
 
     def extract_page_number(self, query: str):
@@ -174,6 +179,7 @@ class NLPController(BaseController):
         return None
 
     def search_vector_db_collection(self, project: Project, text: str, limit: int = 20, image_limit: int = 20):
+        start = time.perf_counter()
         logger = logging.getLogger("uvicorn.error")
         logger.info(f"Searching vector DB for project {project.project_id} with query: {text}")
 
@@ -254,10 +260,12 @@ class NLPController(BaseController):
         if combined:
             combined = self.rerank_with_flagembedding(text, combined)
             combined = combined[:20]  # Rerank top 20, then send top 10 to LLM
-
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] search_vector_db_collection() took {end - start:.2f} seconds")
         return combined
 
     def answer_rag_question(self, project: Project, query: str, limit: int = 10, chat_history=None):
+        start = time.perf_counter()
         logger = logging.getLogger("uvicorn.error")
         logger.info(f"Starting RAG answer for project {project.project_id} with query: {query}")
         answer, full_prompt, chat_history_out = None, None, None
@@ -351,7 +359,8 @@ class NLPController(BaseController):
             logger.info("Received answer from generation client.")
         else:
             logger.warning("No answer received from generation client.")
-
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] answer_rag_question() took {end - start:.2f} seconds")
         return answer, message_parts, chat_history_out
 
     def is_image_query(self, query: str) -> bool:
@@ -390,6 +399,7 @@ class NLPController(BaseController):
         return [doc for doc, _ in reranked]
 
     def rerank_with_flagembedding(self, query: str, docs: list):
+        start = time.perf_counter()
         from FlagEmbedding import FlagReranker
 
         # You may want to cache the reranker instance in production
@@ -399,4 +409,6 @@ class NLPController(BaseController):
         scores = reranker.compute_score(pairs)
 
         reranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+        end = time.perf_counter()
+        logging.getLogger("uvicorn.error").info(f"[PROFILE] rerank_with_flagembedding() took {end - start:.2f} seconds")
         return [doc for doc, _ in reranked]
