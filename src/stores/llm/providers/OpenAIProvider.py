@@ -2,6 +2,8 @@ from ..LLMInterface import LLMInterface
 from ..LLMEnums import OpenAIEnum
 from openai import OpenAI
 import logging
+import time
+import random
 
 class OpenAIProvider(LLMInterface):
 
@@ -61,16 +63,34 @@ class OpenAIProvider(LLMInterface):
         )
 
         self.logger.info(f"Sending request to OpenAI: model={self.generation_model_id}, max_tokens={max_output_tokens}, temperature={temperature}")
-        try:
-            response = self.client.chat.completions.create(
-                model=self.generation_model_id,
-                messages=chat_history,
-                max_tokens=max_output_tokens,
-                temperature=temperature
-            )
-        except Exception as e:
-            self.logger.error(f"Exception during OpenAI completion: {e}")
-            return None
+        
+        # Retry logic for connection errors
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.generation_model_id,
+                    messages=chat_history,
+                    max_tokens=max_output_tokens,
+                    temperature=temperature
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if any(conn_error in error_str for conn_error in ["connection", "remote", "timeout", "aborted", "network"]):
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                        self.logger.warning(f"Connection error on attempt {attempt + 1}: {e}. Retrying in {delay:.2f} seconds...")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        self.logger.error(f"Connection error after {max_retries} attempts: {e}")
+                        return None
+                else:
+                    self.logger.error(f"Exception during OpenAI completion: {e}")
+                    return None
 
         if not response or not response.choices or len(response.choices) == 0 or not response.choices[0].message:
             self.logger.error("Error while generating text with OpenAI")
@@ -93,14 +113,31 @@ class OpenAIProvider(LLMInterface):
         text = text[:max_size]
         self.logger.debug(f"Embedding text of length {len(text)} with model {self.embedding_model_id}")
 
-        try:
-            response = self.client.embeddings.create(
-                model=self.embedding_model_id,
-                input=text,
-            )
-        except Exception as e:
-            self.logger.error(f"Exception during OpenAI embedding: {e}")
-            return None
+        # Retry logic for connection errors
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.embeddings.create(
+                    model=self.embedding_model_id,
+                    input=text,
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if any(conn_error in error_str for conn_error in ["connection", "remote", "timeout", "aborted", "network"]):
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                        self.logger.warning(f"Connection error on attempt {attempt + 1}: {e}. Retrying in {delay:.2f} seconds...")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        self.logger.error(f"Connection error after {max_retries} attempts: {e}")
+                        return None
+                else:
+                    self.logger.error(f"Exception during OpenAI embedding: {e}")
+                    return None
 
         if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:
             self.logger.error("Error while embedding text with OpenAI")

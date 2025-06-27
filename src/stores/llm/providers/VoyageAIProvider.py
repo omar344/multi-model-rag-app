@@ -5,6 +5,8 @@ import logging
 import base64
 from io import BytesIO
 from PIL import Image
+import time
+import random
 
 class VoyageAIProvider(LLMInterface):
     
@@ -51,8 +53,8 @@ class VoyageAIProvider(LLMInterface):
 
     def embed_text(self, text: str, document_type: str = None):
         """
-        If document_type == "image", treat text as base64 image.
         If document_type == "document" or "query", treat as text.
+        If document_type == "image", treat text as base64 image.
         """
         if not self.client:
             self.logger.error("VoyageAI client was not set")
@@ -78,20 +80,38 @@ class VoyageAIProvider(LLMInterface):
             # Just text
             inputs = [[text]]
 
-        try:
-            result = self.client.multimodal_embed(
-                inputs=inputs,
-                model=self.embedding_model_id,
-                input_type=input_type,
-                truncation=True
-            )
-            if result and result.embeddings and len(result.embeddings) > 0:
-                return result.embeddings[0]
-            else:
-                self.logger.error("No embedding returned from VoyageAI multimodal_embed")
-                return None
-        except Exception as e:
-            self.logger.error(f"Error while embedding with VoyageAI: {e}")
+        # Retry logic for connection errors
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                result = self.client.multimodal_embed(
+                    inputs=inputs,
+                    model=self.embedding_model_id,
+                    input_type=input_type,
+                    truncation=True
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if any(conn_error in error_str for conn_error in ["connection", "remote", "timeout", "aborted", "network"]):
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                        self.logger.warning(f"Connection error on attempt {attempt + 1}: {e}. Retrying in {delay:.2f} seconds...")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        self.logger.error(f"Connection error after {max_retries} attempts: {e}")
+                        return None
+                else:
+                    self.logger.error(f"Error while embedding with VoyageAI: {e}")
+                    return None
+
+        if result and result.embeddings and len(result.embeddings) > 0:
+            return result.embeddings[0]
+        else:
+            self.logger.error("No embedding returned from VoyageAI multimodal_embed")
             return None
 
     def construct_prompt(self, prompt: str, role: str):
