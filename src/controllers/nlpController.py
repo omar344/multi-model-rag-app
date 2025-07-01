@@ -291,31 +291,42 @@ class NLPController(BaseController):
             doc_type = doc.metadata.get("type", "text")
             is_table_image = doc.metadata.get("is_table_image", False)
             page_number = doc.metadata.get("page_number")
+            figure_number = doc.metadata.get("figure_number")
+            table_number = doc.metadata.get("table_number")
+            caption = doc.metadata.get("caption")
+            # Determine type label
+            if is_table_image or (doc_type == "image" and table_number):
+                type_label = f"Table {table_number}" if table_number else f"Table {idx+1}"
+            elif doc_type == "image" and figure_number:
+                type_label = f"Figure {figure_number}"
+            elif doc_type == "image":
+                type_label = f"Image {idx+1}"
+            else:
+                type_label = "Text"
+            page_label = f"[Page {page_number if page_number is not None else 'N/A'}]"
             if doc_type == "image" or is_table_image:
                 logger.info(f"Adding image document {idx} to prompt.")
                 image_b64 = doc.text
-                caption = doc.metadata.get("caption")
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/png;base64,{image_b64}"
+                # Add text description BEFORE the image, with strong page association
+                if type_label:
+                    if caption:
+                        message_parts.append({
+                            "type": "text",
+                            "text": f"{page_label} [{type_label}]: {caption}"
+                        })
+                    else:
+                        message_parts.append({
+                            "type": "text",
+                            "text": f"{page_label} [{type_label}]"
+                        })
                 message_parts.append({
                     "type": "image_url",
                     "image_url": {"url": image_b64}
                 })
-                # Add page number and caption/context
-                page_info = f"(Page: {page_number if page_number is not None else 'N/A'})"
-                if caption:
-                    message_parts.append({
-                        "type": "text",
-                        "text": f"Image {idx+1} {page_info}: {caption}"
-                    })
-                else:
-                    message_parts.append({
-                        "type": "text",
-                        "text": f"Image {idx+1} {page_info}"
-                    })
             else:
                 logger.info(f"Adding text document {idx} to prompt.")
-                # Add prev_context and next_context if available
                 prev_context = doc.metadata.get("prev_context")
                 next_context = doc.metadata.get("next_context")
                 chunk_text = doc.text
@@ -328,7 +339,7 @@ class NLPController(BaseController):
                 full_chunk_text = "\n\n".join(context_parts)
                 message_parts.append({
                     "type": "text",
-                    "text": self.template_parser.get("rag", "document_prompt", {
+                    "text": f"{page_label} [Text]:\n" + self.template_parser.get("rag", "document_prompt", {
                         "doc_num": idx + 1,
                         "chunk_text": full_chunk_text,
                         "page_number": page_number if page_number is not None else "N/A"
