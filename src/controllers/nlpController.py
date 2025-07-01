@@ -10,6 +10,7 @@ import io
 import base64
 import numpy as np
 import re
+import time
 
 
 class NLPController(BaseController):
@@ -34,7 +35,7 @@ class NLPController(BaseController):
             logger.info(f"[ImageResize] Original image base64 size: {before_size / 1024:.2f} KB")
             image_data = base64.b64decode(image_b64)
             image = Image.open(io.BytesIO(image_data)).convert("RGB")
-            image.thumbnail(max_size, Image.LANCZOS)
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
             buffer = io.BytesIO()
             image.save(buffer, format="JPEG", quality=quality, optimize=True)
             resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
@@ -49,11 +50,11 @@ class NLPController(BaseController):
         return f"collection_{user_id}_{project_id}".strip()
     
     def reset_vector_db_collection(self, project: Project):
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         return self.vectordb_client.delete_collection(collection_name=collection_name)
     
     def get_vector_db_collection_info(self, project: Project):
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         collection_info = self.vectordb_client.get_collection_info(collection_name=collection_name)
 
         return json.loads(
@@ -63,12 +64,15 @@ class NLPController(BaseController):
     def index_into_vector_db(self, project: Project, chunks: List[DataChunk],
                                    chunks_ids: List[int], 
                                    do_reset: bool = False):
+        start = time.perf_counter()
         logger = logging.getLogger("uvicorn.error")
         if not chunks:
             logger.warning("No chunks to embed for this batch.")
+            end = time.perf_counter()
+            logger.info(f"[PROFILE] index_into_vector_db() took {end - start:.2f} seconds")
             return 0
 
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         logger.info(f"Indexing into vector DB collection: {collection_name}")
 
         # --- Batch preparation ---
@@ -163,7 +167,8 @@ class NLPController(BaseController):
 
         inserted_count = len(final_vectors) if inserted else 0
         logger.info(f"Inserted {inserted_count} vectors into collection '{collection_name}'.")
-
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] index_into_vector_db() took {end - start:.2f} seconds")
         return True
 
     def extract_page_number(self, query: str):
@@ -174,10 +179,11 @@ class NLPController(BaseController):
         return None
 
     def search_vector_db_collection(self, project: Project, text: str, limit: int = 20, image_limit: int = 20):
+        start = time.perf_counter()
         logger = logging.getLogger("uvicorn.error")
         logger.info(f"Searching vector DB for project {project.project_id} with query: {text}")
 
-        collection_name = self.create_collection_name(project_id=project.project_id, user_id=project.user_id)
+        collection_name = self.create_collection_name(project_id=str(project.project_id), user_id=str(project.user_id))
         vector = self.embedding_client.embed_text(text=text, document_type=DocumentTypeEnum.QUERY.value)
 
         if not vector or len(vector) == 0:
@@ -254,10 +260,12 @@ class NLPController(BaseController):
         if combined:
             combined = self.rerank_with_flagembedding(text, combined)
             combined = combined[:20]  # Rerank top 20, then send top 10 to LLM
-
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] search_vector_db_collection() took {end - start:.2f} seconds")
         return combined
 
     def answer_rag_question(self, project: Project, query: str, limit: int = 10, chat_history=None):
+        start = time.perf_counter()
         logger = logging.getLogger("uvicorn.error")
         logger.info(f"Starting RAG answer for project {project.project_id} with query: {query}")
         answer, full_prompt, chat_history_out = None, None, None
@@ -283,35 +291,57 @@ class NLPController(BaseController):
             doc_type = doc.metadata.get("type", "text")
             is_table_image = doc.metadata.get("is_table_image", False)
             page_number = doc.metadata.get("page_number")
+            figure_number = doc.metadata.get("figure_number")
+            table_number = doc.metadata.get("table_number")
+            caption = doc.metadata.get("caption")
+            # Determine type label
+            if is_table_image or (doc_type == "image" and table_number):
+                type_label = f"Table {table_number}" if table_number else f"Table {idx+1}"
+            elif doc_type == "image" and figure_number:
+                type_label = f"Figure {figure_number}"
+            elif doc_type == "image":
+                type_label = f"Image {idx+1}"
+            else:
+                type_label = "Text"
+            page_label = f"[Page {page_number if page_number is not None else 'N/A'}]"
             if doc_type == "image" or is_table_image:
                 logger.info(f"Adding image document {idx} to prompt.")
                 image_b64 = doc.text
-                caption = doc.metadata.get("caption")
                 if not image_b64.startswith("data:"):
                     image_b64 = f"data:image/png;base64,{image_b64}"
+                # Add text description BEFORE the image, with strong page association
+                if type_label:
+                    if caption:
+                        message_parts.append({
+                            "type": "text",
+                            "text": f"{page_label} [{type_label}]: {caption}"
+                        })
+                    else:
+                        message_parts.append({
+                            "type": "text",
+                            "text": f"{page_label} [{type_label}]"
+                        })
                 message_parts.append({
                     "type": "image_url",
                     "image_url": {"url": image_b64}
                 })
-                # Add page number and caption/context
-                page_info = f"(Page: {page_number if page_number is not None else 'N/A'})"
-                if caption:
-                    message_parts.append({
-                        "type": "text",
-                        "text": f"Image {idx+1} {page_info}: {caption}"
-                    })
-                else:
-                    message_parts.append({
-                        "type": "text",
-                        "text": f"Image {idx+1} {page_info}"
-                    })
             else:
                 logger.info(f"Adding text document {idx} to prompt.")
+                prev_context = doc.metadata.get("prev_context")
+                next_context = doc.metadata.get("next_context")
+                chunk_text = doc.text
+                context_parts = []
+                if prev_context:
+                    context_parts.append(f"[Previous context]\n{prev_context}")
+                context_parts.append(f"[Main chunk]\n{chunk_text}")
+                if next_context:
+                    context_parts.append(f"[Next context]\n{next_context}")
+                full_chunk_text = "\n\n".join(context_parts)
                 message_parts.append({
                     "type": "text",
-                    "text": self.template_parser.get("rag", "document_prompt", {
+                    "text": f"{page_label} [Text]:\n" + self.template_parser.get("rag", "document_prompt", {
                         "doc_num": idx + 1,
-                        "chunk_text": doc.text,
+                        "chunk_text": full_chunk_text,
                         "page_number": page_number if page_number is not None else "N/A"
                     })
                 })
@@ -340,7 +370,8 @@ class NLPController(BaseController):
             logger.info("Received answer from generation client.")
         else:
             logger.warning("No answer received from generation client.")
-
+        end = time.perf_counter()
+        logger.info(f"[PROFILE] answer_rag_question() took {end - start:.2f} seconds")
         return answer, message_parts, chat_history_out
 
     def is_image_query(self, query: str) -> bool:
@@ -379,13 +410,16 @@ class NLPController(BaseController):
         return [doc for doc, _ in reranked]
 
     def rerank_with_flagembedding(self, query: str, docs: list):
+        start = time.perf_counter()
         from FlagEmbedding import FlagReranker
 
         # You may want to cache the reranker instance in production
         reranker = FlagReranker('BAAI/bge-reranker-base', use_fp16=True)
 
-        pairs = [[query, doc.text] for doc in docs]
+        pairs = [(query, doc.text) for doc in docs]
         scores = reranker.compute_score(pairs)
 
         reranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+        end = time.perf_counter()
+        logging.getLogger("uvicorn.error").info(f"[PROFILE] rerank_with_flagembedding() took {end - start:.2f} seconds")
         return [doc for doc, _ in reranked]

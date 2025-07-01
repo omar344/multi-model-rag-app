@@ -6,6 +6,8 @@ from azure.core.pipeline.transport import RequestsTransport
 from azure.core.pipeline.policies import RetryPolicy
 import os
 import logging
+import time
+import random
 
 
 class GitHubModelsProvider(LLMInterface):
@@ -79,31 +81,46 @@ class GitHubModelsProvider(LLMInterface):
             self.logger.error("Input to embed_text must be a string or list of strings.")
             return None
 
-        self.logger.info(f"Calling EmbeddingsClient.embed with model: {self.embedding_model_id} and {len(inputs)} input(s)")
-        try:
-            self.logger.info("Sending embedding request...")
-            response = self.client.embed(
-                input=inputs,
-                model=self.embedding_model_id,
-            )
-            self.logger.info("Embedding request completed.")
-            self.logger.info("Received response from GitHub Models API.")
-            # Return all embeddings if batch, or single if only one input
-            if response.data and len(response.data) > 0:
-                if len(inputs) == 1:
-                    return response.data[0].embedding
+        # Retry logic for connection errors
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"Calling EmbeddingsClient.embed with model: {self.embedding_model_id} and {len(inputs)} input(s) (attempt {attempt + 1}/{max_retries})")
+                self.logger.info("Sending embedding request...")
+                response = self.client.embed(
+                    input=inputs,
+                    model=self.embedding_model_id,
+                )
+                self.logger.info("Embedding request completed.")
+                self.logger.info("Received response from GitHub Models API.")
+                # Return all embeddings if batch, or single if only one input
+                if response.data and len(response.data) > 0:
+                    if len(inputs) == 1:
+                        return response.data[0].embedding
+                    else:
+                        return [d.embedding for d in response.data]
                 else:
-                    return [d.embedding for d in response.data]
-            else:
-                self.logger.error("No embedding returned from GitHub Models API.")
-                return None
-        except Exception as e:
-            error_str = str(e).lower()
-            if "rate limit" in error_str or "quota" in error_str or "429" in error_str:
-                self.logger.error("Rate limit or quota exceeded while embedding with GitHub Models API.")
-            else:
-                self.logger.error(f"Error while embedding with GitHub Models API: {e}")
-            return None
+                    self.logger.error("No embedding returned from GitHub Models API.")
+                    return None
+            except Exception as e:
+                error_str = str(e).lower()
+                if "rate limit" in error_str or "quota" in error_str or "429" in error_str:
+                    self.logger.error("Rate limit or quota exceeded while embedding with GitHub Models API.")
+                    return None
+                elif any(conn_error in error_str for conn_error in ["connection", "remote", "timeout", "aborted"]):
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                        self.logger.warning(f"Connection error on attempt {attempt + 1}: {e}. Retrying in {delay:.2f} seconds...")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        self.logger.error(f"Connection error after {max_retries} attempts: {e}")
+                        return None
+                else:
+                    self.logger.error(f"Error while embedding with GitHub Models API: {e}")
+                    return None
 
     def construct_prompt(self, prompt: str, role: str):
         return {

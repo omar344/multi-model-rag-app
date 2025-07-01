@@ -3,6 +3,8 @@ from ..LLMEnums import LLMEnums
 
 import logging
 from groq import Groq
+import time
+import random
 
 class GroqProvider(LLMInterface):
     def __init__(self, api_key: str, api_url: str=None,
@@ -52,12 +54,33 @@ class GroqProvider(LLMInterface):
             self.construct_prompt(prompt=prompt, role=GroqEnum.USER.value)
         )
         
-        response = self.client.chat.completions.create(
-            model=self.generation_model_id,
-            messages=chat_history,
-            max_output_tokens=max_output_tokens,
-            temperature=temperature
-        )
+        # Retry logic for connection errors
+        max_retries = 3
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.generation_model_id,
+                    messages=chat_history,
+                    max_output_tokens=max_output_tokens,
+                    temperature=temperature
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if any(conn_error in error_str for conn_error in ["connection", "remote", "timeout", "aborted", "network"]):
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                        self.logger.warning(f"Connection error on attempt {attempt + 1}: {e}. Retrying in {delay:.2f} seconds...")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        self.logger.error(f"Connection error after {max_retries} attempts: {e}")
+                        return None
+                else:
+                    self.logger.error(f"Exception during Groq completion: {e}")
+                    return None
         
         if not response or not response.choices or len(response.choices) == 0 or not response.choices[0].message:
             self.logger.error("No response from Groq API.")
